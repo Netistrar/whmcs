@@ -10,6 +10,9 @@ if (!defined("WHMCS")) {
 
 use Netistrar\ClientAPI\APIProvider;
 use Netistrar\ClientAPI\Objects\Domain\Descriptor\DomainNameAvailabilityDescriptor;
+use Netistrar\ClientAPI\Objects\Domain\Descriptor\DomainNameCreateDescriptor;
+use Netistrar\ClientAPI\Objects\Domain\DomainNameContact;
+use WHMCS\Domain\Registrar\Domain;
 use WHMCS\Domains\DomainLookup\ResultsList;
 use WHMCS\Domains\DomainLookup\SearchResult;
 use WHMCS\Module\Registrar\Registrarmodule\ApiClient;
@@ -89,142 +92,50 @@ function netistrar_getConfigArray() {
 function netistrar_RegisterDomain($params) {
 
 
-    // user defined configuration values
-    $userIdentifier = $params['API Username'];
-    $apiKey = $params['API Key'];
-    $testMode = $params['Test Mode'];
-    $accountMode = $params['Account Mode'];
-    $emailPreference = $params['Email Preference'];
-    $additionalInfo = $params['Additional Information'];
+    // Create the domain names structure.
+    $domainNames = array($params['sld'] . "." . $params['tld']);
 
-    // registration parameters
-    $sld = $params['sld'];
-    $tld = $params['tld'];
-    $registrationPeriod = $params['regperiod'];
 
-    /**
-     * Nameservers.
-     *
-     * If purchased with web hosting, values will be taken from the
-     * assigned web hosting server. Otherwise uses the values specified
-     * during the order process.
-     */
-    $nameserver1 = $params['ns1'];
-    $nameserver2 = $params['ns2'];
-    $nameserver3 = $params['ns3'];
-    $nameserver4 = $params['ns4'];
-    $nameserver5 = $params['ns5'];
+    // Construct nameservers
+    $nameservers = array();
+    if ($params["ns1"]) $nameservers[] = $params["ns1"];
+    if ($params["ns2"]) $nameservers[] = $params["ns2"];
+    if ($params["ns3"]) $nameservers[] = $params["ns3"];
+    if ($params["ns4"]) $nameservers[] = $params["ns4"];
+    if ($params["ns5"]) $nameservers[] = $params["ns5"];
 
-    // registrant information
-    $firstName = $params["firstname"];
-    $lastName = $params["lastname"];
-    $fullName = $params["fullname"]; // First name and last name combined
-    $companyName = $params["companyname"];
-    $email = $params["email"];
-    $address1 = $params["address1"];
-    $address2 = $params["address2"];
-    $city = $params["city"];
-    $state = $params["state"]; // eg. TX
-    $stateFullName = $params["fullstate"]; // eg. Texas
-    $postcode = $params["postcode"]; // Postcode/Zip code
-    $countryCode = $params["countrycode"]; // eg. GB
-    $countryName = $params["countryname"]; // eg. United Kingdom
-    $phoneNumber = $params["phonenumber"]; // Phone number as the user provided it
-    $phoneCountryCode = $params["phonecc"]; // Country code determined based on country
-    $phoneNumberFormatted = $params["fullphonenumber"]; // Format: +CC.xxxxxxxxxxxx
+    $phone = explode(".", $params["fullphonenumber"]);
 
-    /**
-     * Admin contact information.
-     *
-     * Defaults to the same as the client information. Can be configured
-     * to use the web hosts details if the `Use Clients Details` option
-     * is disabled in Setup > General Settings > Domains.
-     */
-    $adminFirstName = $params["adminfirstname"];
-    $adminLastName = $params["adminlastname"];
-    $adminCompanyName = $params["admincompanyname"];
-    $adminEmail = $params["adminemail"];
-    $adminAddress1 = $params["adminaddress1"];
-    $adminAddress2 = $params["adminaddress2"];
-    $adminCity = $params["admincity"];
-    $adminState = $params["adminstate"]; // eg. TX
-    $adminStateFull = $params["adminfullstate"]; // eg. Texas
-    $adminPostcode = $params["adminpostcode"]; // Postcode/Zip code
-    $adminCountry = $params["admincountry"]; // eg. GB
-    $adminPhoneNumber = $params["adminphonenumber"]; // Phone number as the user provided it
-    $adminPhoneNumberFormatted = $params["adminfullphonenumber"]; // Format: +CC.xxxxxxxxxxxx
+    $ownerContact = new DomainNameContact($params["fullname"], $params["email"], $params["companyname"], $params["address1"], $params["address2"], $params["city"],
+        $params["state"], $params["postcode"], $params["countrycode"], $phone[0] ? $phone[0] : null,
+        isset($phone[1]) ? $phone[1] : null);
 
-    // domain addon purchase status
-    $enableDnsManagement = (bool)$params['dnsmanagement'];
-    $enableEmailForwarding = (bool)$params['emailforwarding'];
-    $enableIdProtection = (bool)$params['idprotection'];
 
-    /**
-     * Premium domain parameters.
-     *
-     * Premium domains enabled informs you if the admin user has enabled
-     * the selling of premium domain names. If this domain is a premium name,
-     * `premiumCost` will contain the cost price retrieved at the time of
-     * the order being placed. The premium order should only be processed
-     * if the cost price now matches the previously fetched amount.
-     */
-    $premiumDomainsEnabled = (bool)$params['premiumEnabled'];
-    $premiumDomainsCost = $params['premiumCost'];
+    $adminPhone = explode(".", $params["adminfullphonenumber"]);
 
-    // Build post data
-    $postfields = array(
-        'username' => $userIdentifier,
-        'password' => $apiKey,
-        'testmode' => $testMode,
-        'domain' => $sld . '.' . $tld,
-        'years' => $registrationPeriod,
-        'nameservers' => array(
-            'ns1' => $nameserver1,
-            'ns2' => $nameserver2,
-            'ns3' => $nameserver3,
-            'ns4' => $nameserver4,
-            'ns5' => $nameserver5,
-        ),
-        'contacts' => array(
-            'registrant' => array(
-                'firstname' => $firstName,
-                'lastname' => $lastName,
-                'companyname' => $companyName,
-                'email' => $email,
-                'address1' => $address1,
-                'address2' => $address2,
-                'city' => $city,
-                'state' => $state,
-                'zipcode' => $postcode,
-                'country' => $countryCode,
-                'phonenumber' => $phoneNumberFormatted,
-            ),
-            'tech' => array(
-                'firstname' => $adminFirstName,
-                'lastname' => $adminLastName,
-                'companyname' => $adminCompanyName,
-                'email' => $adminEmail,
-                'address1' => $adminAddress1,
-                'address2' => $adminAddress2,
-                'city' => $adminCity,
-                'state' => $adminState,
-                'zipcode' => $adminPostcode,
-                'country' => $adminCountry,
-                'phonenumber' => $adminPhoneNumberFormatted,
-            ),
-        ),
-        'dnsmanagement' => $enableDnsManagement,
-        'emailforwarding' => $enableEmailForwarding,
-        'idprotection' => $enableIdProtection,
-    );
+    $adminContact = new DomainNameContact($params["adminfirstname"] . " " . $params["adminlastname"], $params["adminemail"], $params["admincompanyname"], $params["adminaddress1"],
+        $params["adminaddress2"], $params["admincity"], $params["adminstate"], $params["adminpostcode"], $params["admincountrycode"],
+        $adminPhone[0] ? $adminPhone[0] : null,
+        isset($adminPhone[1]) ? $adminPhone[1] : null);
 
-    if ($premiumDomainsEnabled && $premiumDomainsCost) {
-        $postfields['accepted_premium_cost'] = $premiumDomainsCost;
-    }
+
+    $privacyProxy = (bool)$params['idprotection'] ? 1 : 2;
+
+    // Create the structure we need
+    $domainRegistrationDescriptor = new DomainNameCreateDescriptor($domainNames, $params['regperiod'], $ownerContact, $nameservers, $adminContact, $adminContact, $adminContact, $privacyProxy, false);
+
 
     try {
-        $api = new ApiClient();
-        $api->call('Register', $postfields);
+
+        // Create the domain using the API.
+        $api = netistrar_GetAPIInstance($params);
+        $transaction = $api->domains()->create($domainRegistrationDescriptor);
+
+        logModuleCall("netistrar", "Register Domain", $domainRegistrationDescriptor, $transaction);
+
+        if ($transaction->getTransactionStatus() != "SUCCEEDED") {
+            throw new Exception("An unexpected error occurred processing this registration.");
+        }
 
         return array(
             'success' => true,
@@ -474,6 +385,54 @@ function netistrar_RenewDomain($params) {
     }
 }
 
+
+/**
+ * Combined get domain information method for returning core info about a domain.
+ *
+ * @param $params
+ */
+function netistrar_GetDomainInformation($params) {
+
+    // Api instance
+    $api = netistrar_GetAPIInstance($params);
+
+    $info = $api->domains()->get($params['sld'] . "." . $params['tld']);
+
+
+    $expiryDate = date_create_from_format("d/m/Y H:i:s", $info->getExpiryDate());
+    $expiryDate = WHMCS\Carbon::createFromDate($expiryDate->format("Y"), $expiryDate->format("m"), $expiryDate->format("d"));
+
+    $lockedUntil = null;
+    if ($info->getLockedUntil()) {
+        $lockedUntil = date_create_from_format("d/m/Y H:i:s", $info->getLockedUntil());
+        $lockedUntil = WHMCS\Carbon::createFromDate($lockedUntil->format("Y"), $lockedUntil->format("m"), $lockedUntil->format("d"));
+
+    }
+
+    return (new Domain)
+        ->setDomain($info->getDomainName())
+        ->setNameservers($info->getNameservers())
+        ->setRegistrationStatus($info->getStatus())
+        ->setTransferLock($info->getLocked())
+        ->setTransferLockExpiryDate($lockedUntil)
+        ->setExpiryDate($expiryDate)
+        ->setIdProtectionStatus($info->getPrivacyProxy() == 1)
+        ->setDomainContactChangePending($info->getOwnerContact()->getPendingContact() ? true : false)
+        ->setRegistrantEmailAddress($info->getOwnerContact()->getEmailAddress())
+        ->setIrtpVerificationTriggerFields(
+            [
+                'Registrant' => [
+                    'First Name',
+                    'Last Name',
+                    'Organization Name',
+                    'Email',
+                ],
+            ]
+        );
+
+}
+
+
 /**
  * Fetch current nameservers.
  *
@@ -485,47 +444,9 @@ function netistrar_RenewDomain($params) {
  *
  * @return array
  */
-function netistrar_GetNameservers($params) {
-    // user defined configuration values
-    $userIdentifier = $params['API Username'];
-    $apiKey = $params['API Key'];
-    $testMode = $params['Test Mode'];
-    $accountMode = $params['Account Mode'];
-    $emailPreference = $params['Email Preference'];
-    $additionalInfo = $params['Additional Information'];
+//function netistrar_GetNameservers($params) {
 
-    // domain parameters
-    $sld = $params['sld'];
-    $tld = $params['tld'];
-    $registrationPeriod = $params['regperiod'];
-
-    // Build post data
-    $postfields = array(
-        'username' => $userIdentifier,
-        'password' => $apiKey,
-        'testmode' => $testMode,
-        'domain' => $sld . '.' . $tld,
-    );
-
-    try {
-        $api = new ApiClient();
-        $api->call('GetNameservers', $postfields);
-
-        return array(
-            'success' => true,
-            'ns1' => $api->getFromResponse('nameserver1'),
-            'ns2' => $api->getFromResponse('nameserver2'),
-            'ns3' => $api->getFromResponse('nameserver3'),
-            'ns4' => $api->getFromResponse('nameserver4'),
-            'ns5' => $api->getFromResponse('nameserver5'),
-        );
-
-    } catch (\Exception $e) {
-        return array(
-            'error' => $e->getMessage(),
-        );
-    }
-}
+//}
 
 /**
  * Save nameserver changes.
@@ -600,86 +521,76 @@ function netistrar_SaveNameservers($params) {
  * @return array
  */
 function netistrar_GetContactDetails($params) {
-    // user defined configuration values
-    $userIdentifier = $params['API Username'];
-    $apiKey = $params['API Key'];
-    $testMode = $params['Test Mode'];
-    $accountMode = $params['Account Mode'];
-    $emailPreference = $params['Email Preference'];
-    $additionalInfo = $params['Additional Information'];
 
-    // domain parameters
-    $sld = $params['sld'];
-    $tld = $params['tld'];
-
-    // Build post data
-    $postfields = array(
-        'username' => $userIdentifier,
-        'password' => $apiKey,
-        'testmode' => $testMode,
-        'domain' => $sld . '.' . $tld,
-    );
 
     try {
-        $api = new ApiClient();
-        $api->call('GetWhoisInformation', $postfields);
+
+        // Api instance
+        $api = netistrar_GetAPIInstance($params);
+        $info = $api->domains()->get($params['sld'] . "." . $params['tld']);
+
+        $owner = explode(" ", $info->getOwnerContact()->getName());
+        $technical = explode(" ", $info->getTechnicalContact()->getName());
+        $billing = explode(" ", $info->getBillingContact()->getName());
+        $admin = explode(" ", $info->getAdminContact()->getName());
+
 
         return array(
             'Registrant' => array(
-                'First Name' => $api->getFromResponse('registrant.firstname'),
-                'Last Name' => $api->getFromResponse('registrant.lastname'),
-                'Company Name' => $api->getFromResponse('registrant.company'),
-                'Email Address' => $api->getFromResponse('registrant.email'),
-                'Address 1' => $api->getFromResponse('registrant.address1'),
-                'Address 2' => $api->getFromResponse('registrant.address2'),
-                'City' => $api->getFromResponse('registrant.city'),
-                'State' => $api->getFromResponse('registrant.state'),
-                'Postcode' => $api->getFromResponse('registrant.postcode'),
-                'Country' => $api->getFromResponse('registrant.country'),
-                'Phone Number' => $api->getFromResponse('registrant.phone'),
-                'Fax Number' => $api->getFromResponse('registrant.fax'),
+                'First Name' => $owner[0],
+                'Last Name' => isset($owner[1]) ? $owner[1] : "",
+                'Company Name' => $info->getOwnerContact()->getOrganisation(),
+                'Email Address' => $info->getOwnerContact()->getEmailAddress(),
+                'Address 1' => $info->getOwnerContact()->getStreet1(),
+                'Address 2' => $info->getOwnerContact()->getStreet2(),
+                'City' => $info->getOwnerContact()->getCity(),
+                'State' => $info->getOwnerContact()->getCounty(),
+                'Postcode' => $info->getOwnerContact()->getPostcode(),
+                'Country' => $info->getOwnerContact()->getCountry(),
+                'Phone Number' => $info->getOwnerContact()->getTelephone() ? $info->getOwnerContact()->getTelephoneDiallingCode() . "." . $info->getOwnerContact()->getTelephone() : "",
+                'Fax Number' => $info->getOwnerContact()->getFax() ? $info->getOwnerContact()->getFaxDiallingCode() . "." . $info->getOwnerContact()->getFax() : "",
             ),
             'Technical' => array(
-                'First Name' => $api->getFromResponse('tech.firstname'),
-                'Last Name' => $api->getFromResponse('tech.lastname'),
-                'Company Name' => $api->getFromResponse('tech.company'),
-                'Email Address' => $api->getFromResponse('tech.email'),
-                'Address 1' => $api->getFromResponse('tech.address1'),
-                'Address 2' => $api->getFromResponse('tech.address2'),
-                'City' => $api->getFromResponse('tech.city'),
-                'State' => $api->getFromResponse('tech.state'),
-                'Postcode' => $api->getFromResponse('tech.postcode'),
-                'Country' => $api->getFromResponse('tech.country'),
-                'Phone Number' => $api->getFromResponse('tech.phone'),
-                'Fax Number' => $api->getFromResponse('tech.fax'),
+                'First Name' => $technical[0],
+                'Last Name' => isset($technical[1]) ? $technical[1] : "",
+                'Company Name' => $info->getTechnicalContact()->getOrganisation(),
+                'Email Address' => $info->getTechnicalContact()->getEmailAddress(),
+                'Address 1' => $info->getTechnicalContact()->getStreet1(),
+                'Address 2' => $info->getTechnicalContact()->getStreet2(),
+                'City' => $info->getTechnicalContact()->getCity(),
+                'State' => $info->getTechnicalContact()->getCounty(),
+                'Postcode' => $info->getTechnicalContact()->getPostcode(),
+                'Country' => $info->getTechnicalContact()->getCountry(),
+                'Phone Number' => $info->getTechnicalContact()->getTelephone() ? $info->getTechnicalContact()->getTelephoneDiallingCode() . "." . $info->getTechnicalContact()->getTelephone() : "",
+                'Fax Number' => $info->getTechnicalContact()->getFax() ? $info->getTechnicalContact()->getFaxDiallingCode() . "." . $info->getTechnicalContact()->getFax() : "",
             ),
             'Billing' => array(
-                'First Name' => $api->getFromResponse('billing.firstname'),
-                'Last Name' => $api->getFromResponse('billing.lastname'),
-                'Company Name' => $api->getFromResponse('billing.company'),
-                'Email Address' => $api->getFromResponse('billing.email'),
-                'Address 1' => $api->getFromResponse('billing.address1'),
-                'Address 2' => $api->getFromResponse('billing.address2'),
-                'City' => $api->getFromResponse('billing.city'),
-                'State' => $api->getFromResponse('billing.state'),
-                'Postcode' => $api->getFromResponse('billing.postcode'),
-                'Country' => $api->getFromResponse('billing.country'),
-                'Phone Number' => $api->getFromResponse('billing.phone'),
-                'Fax Number' => $api->getFromResponse('billing.fax'),
+                'First Name' => $billing[0],
+                'Last Name' => isset($billing[1]) ? $billing[1] : "",
+                'Company Name' => $info->getBillingContact()->getOrganisation(),
+                'Email Address' => $info->getBillingContact()->getEmailAddress(),
+                'Address 1' => $info->getBillingContact()->getStreet1(),
+                'Address 2' => $info->getBillingContact()->getStreet2(),
+                'City' => $info->getBillingContact()->getCity(),
+                'State' => $info->getBillingContact()->getCounty(),
+                'Postcode' => $info->getBillingContact()->getPostcode(),
+                'Country' => $info->getBillingContact()->getCountry(),
+                'Phone Number' => $info->getBillingContact()->getTelephone() ? $info->getBillingContact()->getTelephoneDiallingCode() . "." . $info->getBillingContact()->getTelephone() : "",
+                'Fax Number' => $info->getBillingContact()->getFax() ? $info->getBillingContact()->getFaxDiallingCode() . "." . $info->getBillingContact()->getFax() : "",
             ),
             'Admin' => array(
-                'First Name' => $api->getFromResponse('admin.firstname'),
-                'Last Name' => $api->getFromResponse('admin.lastname'),
-                'Company Name' => $api->getFromResponse('admin.company'),
-                'Email Address' => $api->getFromResponse('admin.email'),
-                'Address 1' => $api->getFromResponse('admin.address1'),
-                'Address 2' => $api->getFromResponse('admin.address2'),
-                'City' => $api->getFromResponse('admin.city'),
-                'State' => $api->getFromResponse('admin.state'),
-                'Postcode' => $api->getFromResponse('admin.postcode'),
-                'Country' => $api->getFromResponse('admin.country'),
-                'Phone Number' => $api->getFromResponse('admin.phone'),
-                'Fax Number' => $api->getFromResponse('admin.fax'),
+                'First Name' => $admin[0],
+                'Last Name' => isset($admin[1]) ? $admin[1] : "",
+                'Company Name' => $info->getAdminContact()->getOrganisation(),
+                'Email Address' => $info->getAdminContact()->getEmailAddress(),
+                'Address 1' => $info->getAdminContact()->getStreet1(),
+                'Address 2' => $info->getAdminContact()->getStreet2(),
+                'City' => $info->getAdminContact()->getCity(),
+                'State' => $info->getAdminContact()->getCounty(),
+                'Postcode' => $info->getAdminContact()->getPostcode(),
+                'Country' => $info->getAdminContact()->getCountry(),
+                'Phone Number' => $info->getAdminContact()->getTelephone() ? $info->getAdminContact()->getTelephoneDiallingCode() . "." . $info->getAdminContact()->getTelephone() : "",
+                'Fax Number' => $info->getAdminContact()->getFax() ? $info->getAdminContact()->getFaxDiallingCode() . "." . $info->getAdminContact()->getFax() : "",
             ),
         );
 
@@ -792,8 +703,8 @@ function netistrar_CheckAvailability($params) {
 
     // availability check parameters
     $searchTerm = $params['searchTerm'];
-    //$punyCodeSearchTerm = $params['punyCodeSearchTerm'];
-    $tldsToInclude = $params['tldsToInclude'];
+
+    $tldsToInclude = netistrar_PrepareTLDsForAPICall($params['tldsToInclude']);
 
 
     try {
@@ -801,22 +712,12 @@ function netistrar_CheckAvailability($params) {
         $apiProvider = netistrar_GetAPIInstance($params);
         $availability = $apiProvider->domains()->hintedAvailability(new DomainNameAvailabilityDescriptor($searchTerm, null, $tldsToInclude));
 
+
         $results = new ResultsList();
         foreach ($availability->getTldResults() as $tld => $result) {
 
-            // Instantiate a new domain search result object
-            $searchResult = new SearchResult($result->getDomainName(), $tld);
-
-            // Determine the appropriate status to return
-            if ($result->getAvailability() == 'AVAILABLE') {
-                $status = SearchResult::STATUS_NOT_REGISTERED;
-            } elseif ($result->getAvailability() == 'UNAVAILABLE') {
-                $status = SearchResult::STATUS_REGISTERED;
-            } else {
-                $status = SearchResult::STATUS_TLD_NOT_SUPPORTED;
-
-            }
-            $searchResult->setStatus($status);
+            // Convert an API availability result to a search result.
+            $searchResult = netistrar_ConvertAPIAvailabilityResultToSearchResult($result);
 
             // Append to the search results list
             $results->append($searchResult);
@@ -824,13 +725,14 @@ function netistrar_CheckAvailability($params) {
 
         return $results;
 
-    } catch
-    (\Exception $e) {
+    } catch (\Exception $e) {
+
         return array(
             'error' => $e->getMessage(),
         );
     }
 }
+
 
 /**
  * Domain Suggestion Settings.
@@ -843,13 +745,7 @@ function netistrar_CheckAvailability($params) {
  * @return array of Configuration Options
  */
 function netistrar_DomainSuggestionOptions() {
-    return array(
-        'includeCCTlds' => array(
-            'FriendlyName' => 'Include Country Level TLDs',
-            'Type' => 'yesno',
-            'Description' => 'Tick to enable',
-        ),
-    );
+    return array();
 }
 
 /**
@@ -868,73 +764,46 @@ function netistrar_DomainSuggestionOptions() {
  * @return \WHMCS\Domains\DomainLookup\ResultsList An ArrayObject based collection of \WHMCS\Domains\DomainLookup\SearchResult results
  */
 function netistrar_GetDomainSuggestions($params) {
-    // user defined configuration values
-    $userIdentifier = $params['API Username'];
-    $apiKey = $params['API Key'];
-    $testMode = $params['Test Mode'];
-    $accountMode = $params['Account Mode'];
-    $emailPreference = $params['Email Preference'];
-    $additionalInfo = $params['Additional Information'];
+
 
     // availability check parameters
     $searchTerm = $params['searchTerm'];
-    $punyCodeSearchTerm = $params['punyCodeSearchTerm'];
-    $tldsToInclude = $params['tldsToInclude'];
-    $isIdnDomain = (bool)$params['isIdnDomain'];
-    $premiumEnabled = (bool)$params['premiumEnabled'];
-    $suggestionSettings = $params['suggestionSettings'];
+    $tldsToInclude = netistrar_PrepareTLDsForAPICall($params['tldsToInclude']);
 
-    // Build post data
-    $postfields = array(
-        'username' => $userIdentifier,
-        'password' => $apiKey,
-        'testmode' => $testMode,
-        'domain' => $sld . '.' . $tld,
-        'searchTerm' => $searchTerm,
-        'tldsToSearch' => $tldsToInclude,
-        'includePremiumDomains' => $premiumEnabled,
-        'includeCCTlds' => $suggestionSettings['includeCCTlds'],
-    );
 
     try {
-        $api = new ApiClient();
-        $api->call('GetSuggestions', $postfields);
+
+        $apiProvider = netistrar_GetAPIInstance($params);
+        $availability = $apiProvider->domains()->hintedAvailability(new DomainNameAvailabilityDescriptor($searchTerm, null, $tldsToInclude, true));
 
         $results = new ResultsList();
-        foreach ($api->getFromResponse('domains') as $domain) {
+        foreach ($tldsToInclude as $tld) {
 
-            // Instantiate a new domain search result object
-            $searchResult = new SearchResult($domain['sld'], $domain['tld']);
+            $suggestions = isset($availability->getSuggestions()[$tld]) ? $availability->getSuggestions()[$tld] : array();
 
-            // All domain suggestions should be available to register
-            $searchResult->setStatus(SearchResult::STATUS_NOT_REGISTERED);
-
-            // Used to weight results by relevance
-            $searchResult->setScore($domain['score']);
-
-            // Return premium information if applicable
-            if ($domain['isPremiumName']) {
-                $searchResult->setPremiumDomain(true);
-                $searchResult->setPremiumCostPricing(
-                    array(
-                        'register' => $domain['premiumRegistrationPrice'],
-                        'renew' => $domain['premiumRenewPrice'],
-                        'CurrencyCode' => 'USD',
-                    )
-                );
+            // Convert an API availability result to a search result.
+            if (sizeof($suggestions) > 0) {
+                $searchResult = netistrar_ConvertAPIAvailabilityResultToSearchResult($suggestions[0]);
+                $results->append($searchResult);
             }
 
-            // Append to the search results list
-            $results->append($searchResult);
+            if (sizeof($suggestions) > 1) {
+                $searchResult = netistrar_ConvertAPIAvailabilityResultToSearchResult($suggestions[1]);
+                $results->append($searchResult);
+            }
+
+
         }
 
         return $results;
 
     } catch (\Exception $e) {
+
         return array(
             'error' => $e->getMessage(),
         );
     }
+
 }
 
 /**
@@ -1667,28 +1536,6 @@ function netistrar_push($params) {
     return 'Not implemented';
 }
 
-/**
- * Client Area Output.
- *
- * This function renders output to the domain details interface within
- * the client area. The return should be the HTML to be output.
- *
- * @param array $params common module parameters
- *
- * @see https://developers.whmcs.com/domain-registrars/module-parameters/
- *
- * @return string HTML Output
- */
-function netistrar_ClientArea($params) {
-    $output = '
-        <div class="alert alert-info">
-            Your custom HTML output goes here...
-        </div>
-    ';
-
-    return $output;
-}
-
 
 /**
  * Get a Netistrar API Instance from params
@@ -1716,3 +1563,38 @@ function netistrar_GetAPIInstance($params) {
     return new APIProvider($url, $apiKey, $apiSecret);
 }
 
+/**
+ * @param $tldsToInclude
+ * @return mixed
+ */
+function netistrar_PrepareTLDsForAPICall($tldsToInclude) {
+    foreach ($tldsToInclude as $index => $tldToInclude) {
+        $tldsToInclude[$index] = trim($tldsToInclude[$index], ".");
+    }
+    return $tldsToInclude;
+}
+
+
+/**
+ * @param $result
+ * @return SearchResult
+ */
+function netistrar_ConvertAPIAvailabilityResultToSearchResult($result) {
+    $explodedDomainName = explode(".", $result->getDomainName());
+    $prefix = array_shift($explodedDomainName);
+
+    // Instantiate a new domain search result object
+    $searchResult = new SearchResult($prefix, join(".", $explodedDomainName));
+
+    // Determine the appropriate status to return
+    if ($result->getAvailability() == 'AVAILABLE') {
+        $status = SearchResult::STATUS_NOT_REGISTERED;
+    } elseif ($result->getAvailability() == 'UNAVAILABLE') {
+        $status = SearchResult::STATUS_REGISTERED;
+    } else {
+        $status = SearchResult::STATUS_TLD_NOT_SUPPORTED;
+
+    }
+    $searchResult->setStatus($status);
+    return $searchResult;
+}
