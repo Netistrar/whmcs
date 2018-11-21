@@ -11,6 +11,7 @@ if (!defined("WHMCS")) {
 use Netistrar\ClientAPI\APIProvider;
 use Netistrar\ClientAPI\Objects\Domain\Descriptor\DomainNameAvailabilityDescriptor;
 use Netistrar\ClientAPI\Objects\Domain\Descriptor\DomainNameCreateDescriptor;
+use Netistrar\ClientAPI\Objects\Domain\Descriptor\DomainNameUpdateDescriptor;
 use Netistrar\ClientAPI\Objects\Domain\DomainNameContact;
 use WHMCS\Domain\Registrar\Domain;
 use WHMCS\Domains\DomainLookup\ResultsList;
@@ -131,17 +132,21 @@ function netistrar_RegisterDomain($params) {
         $api = netistrar_GetAPIInstance($params);
         $transaction = $api->domains()->create($domainRegistrationDescriptor);
 
-        logModuleCall("netistrar", "Register Domain", $domainRegistrationDescriptor, $transaction);
-
         if ($transaction->getTransactionStatus() != "SUCCEEDED") {
             throw new Exception("An unexpected error occurred processing this registration.");
         }
+
+        logModuleCall("netistrar", "Register Domain", $domainRegistrationDescriptor, $transaction);
+
 
         return array(
             'success' => true,
         );
 
     } catch (\Exception $e) {
+
+        logModuleCall("netistrar", "Register Domain", $domainRegistrationDescriptor, $e);
+
         return array(
             'error' => $e->getMessage(),
         );
@@ -418,6 +423,7 @@ function netistrar_GetDomainInformation($params) {
         ->setExpiryDate($expiryDate)
         ->setIdProtectionStatus($info->getPrivacyProxy() == 1)
         ->setDomainContactChangePending($info->getOwnerContact()->getPendingContact() ? true : false)
+        ->setDomainContactChangeExpiryDate(WHMCS\Carbon::now())
         ->setRegistrantEmailAddress($info->getOwnerContact()->getEmailAddress())
         ->setIrtpVerificationTriggerFields(
             [
@@ -434,21 +440,6 @@ function netistrar_GetDomainInformation($params) {
 
 
 /**
- * Fetch current nameservers.
- *
- * This function should return an array of nameservers for a given domain.
- *
- * @param array $params common module parameters
- *
- * @see https://developers.whmcs.com/domain-registrars/module-parameters/
- *
- * @return array
- */
-//function netistrar_GetNameservers($params) {
-
-//}
-
-/**
  * Save nameserver changes.
  *
  * This function should submit a change of nameservers request to the
@@ -461,47 +452,39 @@ function netistrar_GetDomainInformation($params) {
  * @return array
  */
 function netistrar_SaveNameservers($params) {
-    // user defined configuration values
-    $userIdentifier = $params['API Username'];
-    $apiKey = $params['API Key'];
-    $testMode = $params['Test Mode'];
-    $accountMode = $params['Account Mode'];
-    $emailPreference = $params['Email Preference'];
-    $additionalInfo = $params['Additional Information'];
 
-    // domain parameters
-    $sld = $params['sld'];
-    $tld = $params['tld'];
-
-    // submitted nameserver values
-    $nameserver1 = $params['ns1'];
-    $nameserver2 = $params['ns2'];
-    $nameserver3 = $params['ns3'];
-    $nameserver4 = $params['ns4'];
-    $nameserver5 = $params['ns5'];
-
-    // Build post data
-    $postfields = array(
-        'username' => $userIdentifier,
-        'password' => $apiKey,
-        'testmode' => $testMode,
-        'domain' => $sld . '.' . $tld,
-        'nameserver1' => $nameserver1,
-        'nameserver2' => $nameserver2,
-        'nameserver3' => $nameserver3,
-        'nameserver4' => $nameserver4,
-        'nameserver5' => $nameserver5,
-    );
+    // Api instance
+    $api = netistrar_GetAPIInstance($params);
 
     try {
-        $api = new ApiClient();
-        $api->call('SetNameservers', $postfields);
+
+        // Construct nameservers
+        $nameservers = array();
+        if ($params["ns1"]) $nameservers[] = $params["ns1"];
+        if ($params["ns2"]) $nameservers[] = $params["ns2"];
+        if ($params["ns3"]) $nameservers[] = $params["ns3"];
+        if ($params["ns4"]) $nameservers[] = $params["ns4"];
+        if ($params["ns5"]) $nameservers[] = $params["ns5"];
+
+        // Update the domain with new details.
+        $domainNameUpdateDescriptor = new DomainNameUpdateDescriptor(array($params['sld'] . "." . $params['tld']), null, null, null, null, $nameservers);
+        $transaction = $api->domains()->update($domainNameUpdateDescriptor);
+
+        if ($transaction->getTransactionStatus() != "SUCCEEDED") {
+            throw new Exception("An unexpected error occurred processing this contact update.");
+        }
+
+        logModuleCall("netistrar", "Save Nameservers", $domainNameUpdateDescriptor, $transaction);
 
         return array(
             'success' => true,
         );
 
+
     } catch (\Exception $e) {
+
+        logModuleCall("netistrar", "Save Nameservers", $domainNameUpdateDescriptor, $e);
+
         return array(
             'error' => $e->getMessage(),
         );
@@ -615,68 +598,136 @@ function netistrar_GetContactDetails($params) {
  * @return array
  */
 function netistrar_SaveContactDetails($params) {
-    // user defined configuration values
-    $userIdentifier = $params['API Username'];
-    $apiKey = $params['API Key'];
-    $testMode = $params['Test Mode'];
-    $accountMode = $params['Account Mode'];
-    $emailPreference = $params['Email Preference'];
-    $additionalInfo = $params['Additional Information'];
 
-    // domain parameters
-    $sld = $params['sld'];
-    $tld = $params['tld'];
-
-    // whois information
-    $contactDetails = $params['contactdetails'];
-
-    // Build post data
-    $postfields = array(
-        'username' => $userIdentifier,
-        'password' => $apiKey,
-        'testmode' => $testMode,
-        'domain' => $sld . '.' . $tld,
-        'contacts' => array(
-            'registrant' => array(
-                'firstname' => $contactDetails['Registrant']['First Name'],
-                'lastname' => $contactDetails['Registrant']['Last Name'],
-                'company' => $contactDetails['Registrant']['Company Name'],
-                'email' => $contactDetails['Registrant']['Email Address'],
-                // etc...
-            ),
-            'tech' => array(
-                'firstname' => $contactDetails['Technical']['First Name'],
-                'lastname' => $contactDetails['Technical']['Last Name'],
-                'company' => $contactDetails['Technical']['Company Name'],
-                'email' => $contactDetails['Technical']['Email Address'],
-                // etc...
-            ),
-            'billing' => array(
-                'firstname' => $contactDetails['Billing']['First Name'],
-                'lastname' => $contactDetails['Billing']['Last Name'],
-                'company' => $contactDetails['Billing']['Company Name'],
-                'email' => $contactDetails['Billing']['Email Address'],
-                // etc...
-            ),
-            'admin' => array(
-                'firstname' => $contactDetails['Admin']['First Name'],
-                'lastname' => $contactDetails['Admin']['Last Name'],
-                'company' => $contactDetails['Admin']['Company Name'],
-                'email' => $contactDetails['Admin']['Email Address'],
-                // etc...
-            ),
-        ),
-    );
 
     try {
-        $api = new ApiClient();
-        $api->call('UpdateWhoisInformation', $postfields);
+
+        // whois information
+        $contactDetails = $params['contactdetails'];
+
+        // Get the API
+        $api = netistrar_GetAPIInstance($params);
+
+        // Grab the domains
+        $domain = $api->domains()->get($params['sld'] . "." . $params['tld']);
+
+        $ownerContact = $domain->getOwnerContact();
+        $adminContact = $domain->getAdminContact();
+        $billingContact = $domain->getBillingContact();
+        $technicalContact = $domain->getTechnicalContact();
+
+
+        $ownerContact->setName($contactDetails['Registrant']['First Name'] . " " . $contactDetails['Registrant']['Last Name']);
+        $ownerContact->setOrganisation($contactDetails['Registrant']['Company Name']);
+        $ownerContact->setEmailAddress($contactDetails['Registrant']['Email Address']);
+        $ownerContact->setStreet1($contactDetails['Registrant']['Address 1']);
+        $ownerContact->setStreet2($contactDetails['Registrant']['Address 2']);
+        $ownerContact->setCity($contactDetails['Registrant']['City']);
+        $ownerContact->setCounty($contactDetails['Registrant']['State']);
+        $ownerContact->setPostcode($contactDetails['Registrant']['Postcode']);
+        $ownerContact->setCountry($contactDetails['Registrant']['Country']);
+
+        if ($contactDetails['Registrant']['Phone Number']) {
+            $splitPhoneNumber = explode(".", $contactDetails['Registrant']['Phone Number']);
+            $ownerContact->setTelephoneDiallingCode($splitPhoneNumber[0]);
+            $ownerContact->setTelephone($splitPhoneNumber[1]);
+        }
+
+        if ($contactDetails['Registrant']['Fax Number']) {
+            $splitFaxNumber = explode(".", $contactDetails['Registrant']['Fax Number']);
+            $ownerContact->setFaxDiallingCode($splitFaxNumber[0]);
+            $ownerContact->setFax($splitFaxNumber[1]);
+        }
+
+
+        $adminContact->setName($contactDetails['Admin']['First Name'] . " " . $contactDetails['Admin']['Last Name']);
+        $adminContact->setOrganisation($contactDetails['Admin']['Company Name']);
+        $adminContact->setEmailAddress($contactDetails['Admin']['Email Address']);
+        $adminContact->setStreet1($contactDetails['Admin']['Address 1']);
+        $adminContact->setStreet2($contactDetails['Admin']['Address 2']);
+        $adminContact->setCity($contactDetails['Admin']['City']);
+        $adminContact->setCounty($contactDetails['Admin']['State']);
+        $adminContact->setPostcode($contactDetails['Admin']['Postcode']);
+        $adminContact->setCountry($contactDetails['Admin']['Country']);
+
+        if ($contactDetails['Admin']['Phone Number']) {
+            $splitPhoneNumber = explode(".", $contactDetails['Admin']['Phone Number']);
+            $adminContact->setTelephoneDiallingCode($splitPhoneNumber[0]);
+            $adminContact->setTelephone($splitPhoneNumber[1]);
+        }
+
+        if ($contactDetails['Admin']['Fax Number']) {
+            $splitFaxNumber = explode(".", $contactDetails['Admin']['Fax Number']);
+            $adminContact->setFaxDiallingCode($splitFaxNumber[0]);
+            $adminContact->setFax($splitFaxNumber[1]);
+        }
+
+
+        $technicalContact->setName($contactDetails['Technical']['First Name'] . " " . $contactDetails['Technical']['Last Name']);
+        $technicalContact->setOrganisation($contactDetails['Technical']['Company Name']);
+        $technicalContact->setEmailAddress($contactDetails['Technical']['Email Address']);
+        $technicalContact->setStreet1($contactDetails['Technical']['Address 1']);
+        $technicalContact->setStreet2($contactDetails['Technical']['Address 2']);
+        $technicalContact->setCity($contactDetails['Technical']['City']);
+        $technicalContact->setCounty($contactDetails['Technical']['State']);
+        $technicalContact->setPostcode($contactDetails['Technical']['Postcode']);
+        $technicalContact->setCountry($contactDetails['Technical']['Country']);
+
+        if ($contactDetails['Technical']['Phone Number']) {
+            $splitPhoneNumber = explode(".", $contactDetails['Technical']['Phone Number']);
+            $technicalContact->setTelephoneDiallingCode($splitPhoneNumber[0]);
+            $technicalContact->setTelephone($splitPhoneNumber[1]);
+        }
+
+        if ($contactDetails['Technical']['Fax Number']) {
+            $splitFaxNumber = explode(".", $contactDetails['Technical']['Fax Number']);
+            $technicalContact->setFaxDiallingCode($splitFaxNumber[0]);
+            $technicalContact->setFax($splitFaxNumber[1]);
+        }
+
+
+        $billingContact->setName($contactDetails['Billing']['First Name'] . " " . $contactDetails['Billing']['Last Name']);
+        $billingContact->setOrganisation($contactDetails['Billing']['Company Name']);
+        $billingContact->setEmailAddress($contactDetails['Billing']['Email Address']);
+        $billingContact->setStreet1($contactDetails['Billing']['Address 1']);
+        $billingContact->setStreet2($contactDetails['Billing']['Address 2']);
+        $billingContact->setCity($contactDetails['Billing']['City']);
+        $billingContact->setCounty($contactDetails['Billing']['State']);
+        $billingContact->setPostcode($contactDetails['Billing']['Postcode']);
+        $billingContact->setCountry($contactDetails['Billing']['Country']);
+
+        if ($contactDetails['Billing']['Phone Number']) {
+            $splitPhoneNumber = explode(".", $contactDetails['Billing']['Phone Number']);
+            $billingContact->setTelephoneDiallingCode($splitPhoneNumber[0]);
+            $billingContact->setTelephone($splitPhoneNumber[1]);
+        }
+
+        if ($contactDetails['Billing']['Fax Number']) {
+            $splitFaxNumber = explode(".", $contactDetails['Billing']['Fax Number']);
+            $billingContact->setFaxDiallingCode($splitFaxNumber[0]);
+            $billingContact->setFax($splitFaxNumber[1]);
+        }
+
+
+        // Update the domain with new details.
+        $domainNameUpdateDescriptor = new DomainNameUpdateDescriptor(array($domain->getDomainName()), $ownerContact, $adminContact, $billingContact, $technicalContact);
+        $transaction = $api->domains()->update($domainNameUpdateDescriptor);
+
+        if ($transaction->getTransactionStatus() != "SUCCEEDED") {
+            throw new Exception("An unexpected error occurred processing this contact update.");
+        }
+
+        logModuleCall("netistrar", "Save Contact Details", $domainNameUpdateDescriptor, $transaction);
 
         return array(
             'success' => true,
         );
 
+
     } catch (\Exception $e) {
+
+        logModuleCall("netistrar", "Save Contact Details", $domainNameUpdateDescriptor, $e);
+
         return array(
             'error' => $e->getMessage(),
         );
@@ -806,54 +857,6 @@ function netistrar_GetDomainSuggestions($params) {
 
 }
 
-/**
- * Get registrar lock status.
- *
- * Also known as Domain Lock or Transfer Lock status.
- *
- * @param array $params common module parameters
- *
- * @see https://developers.whmcs.com/domain-registrars/module-parameters/
- *
- * @return string|array Lock status or error message
- */
-function netistrar_GetRegistrarLock($params) {
-    // user defined configuration values
-    $userIdentifier = $params['API Username'];
-    $apiKey = $params['API Key'];
-    $testMode = $params['Test Mode'];
-    $accountMode = $params['Account Mode'];
-    $emailPreference = $params['Email Preference'];
-    $additionalInfo = $params['Additional Information'];
-
-    // domain parameters
-    $sld = $params['sld'];
-    $tld = $params['tld'];
-
-    // Build post data
-    $postfields = array(
-        'username' => $userIdentifier,
-        'password' => $apiKey,
-        'testmode' => $testMode,
-        'domain' => $sld . '.' . $tld,
-    );
-
-    try {
-        $api = new ApiClient();
-        $api->call('GetLockStatus', $postfields);
-
-        if ($api->getFromResponse('lockstatus') == 'locked') {
-            return 'locked';
-        } else {
-            return 'unlocked';
-        }
-
-    } catch (\Exception $e) {
-        return array(
-            'error' => $e->getMessage(),
-        );
-    }
-}
 
 /**
  * Set registrar lock status.
@@ -1167,50 +1170,6 @@ function netistrar_ReleaseDomain($params) {
     }
 }
 
-/**
- * Delete Domain.
- *
- * @param array $params common module parameters
- *
- * @see https://developers.whmcs.com/domain-registrars/module-parameters/
- *
- * @return array
- */
-function netistrar_RequestDelete($params) {
-    // user defined configuration values
-    $userIdentifier = $params['API Username'];
-    $apiKey = $params['API Key'];
-    $testMode = $params['Test Mode'];
-    $accountMode = $params['Account Mode'];
-    $emailPreference = $params['Email Preference'];
-    $additionalInfo = $params['Additional Information'];
-
-    // domain parameters
-    $sld = $params['sld'];
-    $tld = $params['tld'];
-
-    // Build post data
-    $postfields = array(
-        'username' => $userIdentifier,
-        'password' => $apiKey,
-        'testmode' => $testMode,
-        'domain' => $sld . '.' . $tld,
-    );
-
-    try {
-        $api = new ApiClient();
-        $api->call('DeleteDomain', $postfields);
-
-        return array(
-            'success' => 'success',
-        );
-
-    } catch (\Exception $e) {
-        return array(
-            'error' => $e->getMessage(),
-        );
-    }
-}
 
 /**
  * Register a Nameserver.
@@ -1478,62 +1437,6 @@ function netistrar_TransferSync($params) {
             'error' => $e->getMessage(),
         );
     }
-}
-
-/**
- * Client Area Custom Button Array.
- *
- * Allows you to define additional actions your module supports.
- * In this example, we register a Push Domain action which triggers
- * the `netistrar_push` function when invoked.
- *
- * @return array
- */
-function netistrar_ClientAreaCustomButtonArray() {
-    return array(
-        'Push Domain' => 'push',
-    );
-}
-
-/**
- * Client Area Allowed Functions.
- *
- * Only the functions defined within this function or the Client Area
- * Custom Button Array can be invoked by client level users.
- *
- * @return array
- */
-function netistrar_ClientAreaAllowedFunctions() {
-    return array(
-        'Push Domain' => 'push',
-    );
-}
-
-/**
- * Example Custom Module Function: Push
- *
- * @param array $params common module parameters
- *
- * @see https://developers.whmcs.com/domain-registrars/module-parameters/
- *
- * @return array
- */
-function netistrar_push($params) {
-    // user defined configuration values
-    $userIdentifier = $params['API Username'];
-    $apiKey = $params['API Key'];
-    $testMode = $params['Test Mode'];
-    $accountMode = $params['Account Mode'];
-    $emailPreference = $params['Email Preference'];
-    $additionalInfo = $params['Additional Information'];
-
-    // domain parameters
-    $sld = $params['sld'];
-    $tld = $params['tld'];
-
-    // Perform custom action here...
-
-    return 'Not implemented';
 }
 
 
