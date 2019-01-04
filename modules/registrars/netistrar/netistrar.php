@@ -11,8 +11,10 @@ if (!defined("WHMCS")) {
 use Netistrar\ClientAPI\APIProvider;
 use Netistrar\ClientAPI\Objects\Domain\Descriptor\DomainNameAvailabilityDescriptor;
 use Netistrar\ClientAPI\Objects\Domain\Descriptor\DomainNameCreateDescriptor;
+use Netistrar\ClientAPI\Objects\Domain\Descriptor\DomainNameTransferDescriptor;
 use Netistrar\ClientAPI\Objects\Domain\Descriptor\DomainNameUpdateDescriptor;
 use Netistrar\ClientAPI\Objects\Domain\DomainNameContact;
+use Netistrar\ClientAPI\Objects\Domain\DomainNameGlueRecord;
 use WHMCS\Domain\Registrar\Domain;
 use WHMCS\Domains\DomainLookup\ResultsList;
 use WHMCS\Domains\DomainLookup\SearchResult;
@@ -170,150 +172,67 @@ function netistrar_RegisterDomain($params) {
  * @return array
  */
 function netistrar_TransferDomain($params) {
-    // user defined configuration values
-    $userIdentifier = $params['API Username'];
-    $apiKey = $params['API Key'];
-    $testMode = $params['Test Mode'];
-    $accountMode = $params['Account Mode'];
-    $emailPreference = $params['Email Preference'];
-    $additionalInfo = $params['Additional Information'];
 
-    // registration parameters
-    $sld = $params['sld'];
-    $tld = $params['tld'];
-    $registrationPeriod = $params['regperiod'];
+    // Create the domain names structure.
+    $domainName = $params['sld'] . "." . $params['tld'];
     $eppCode = $params['eppcode'];
 
-    /**
-     * Nameservers.
-     *
-     * If purchased with web hosting, values will be taken from the
-     * assigned web hosting server. Otherwise uses the values specified
-     * during the order process.
-     */
-    $nameserver1 = $params['ns1'];
-    $nameserver2 = $params['ns2'];
-    $nameserver3 = $params['ns3'];
-    $nameserver4 = $params['ns4'];
-    $nameserver5 = $params['ns5'];
+    // Construct nameservers
+    $nameservers = array();
+    if ($params["ns1"]) $nameservers[] = $params["ns1"];
+    if ($params["ns2"]) $nameservers[] = $params["ns2"];
+    if ($params["ns3"]) $nameservers[] = $params["ns3"];
+    if ($params["ns4"]) $nameservers[] = $params["ns4"];
+    if ($params["ns5"]) $nameservers[] = $params["ns5"];
 
-    // registrant information
-    $firstName = $params["firstname"];
-    $lastName = $params["lastname"];
-    $fullName = $params["fullname"]; // First name and last name combined
-    $companyName = $params["companyname"];
-    $email = $params["email"];
-    $address1 = $params["address1"];
-    $address2 = $params["address2"];
-    $city = $params["city"];
-    $state = $params["state"]; // eg. TX
-    $stateFullName = $params["fullstate"]; // eg. Texas
-    $postcode = $params["postcode"]; // Postcode/Zip code
-    $countryCode = $params["countrycode"]; // eg. GB
-    $countryName = $params["countryname"]; // eg. United Kingdom
-    $phoneNumber = $params["phonenumber"]; // Phone number as the user provided it
-    $phoneCountryCode = $params["phonecc"]; // Country code determined based on country
-    $phoneNumberFormatted = $params["fullphonenumber"]; // Format: +CC.xxxxxxxxxxxx
+    $phone = explode(".", $params["fullphonenumber"]);
 
-    /**
-     * Admin contact information.
-     *
-     * Defaults to the same as the client information. Can be configured
-     * to use the web hosts details if the `Use Clients Details` option
-     * is disabled in Setup > General Settings > Domains.
-     */
-    $adminFirstName = $params["adminfirstname"];
-    $adminLastName = $params["adminlastname"];
-    $adminCompanyName = $params["admincompanyname"];
-    $adminEmail = $params["adminemail"];
-    $adminAddress1 = $params["adminaddress1"];
-    $adminAddress2 = $params["adminaddress2"];
-    $adminCity = $params["admincity"];
-    $adminState = $params["adminstate"]; // eg. TX
-    $adminStateFull = $params["adminfullstate"]; // eg. Texas
-    $adminPostcode = $params["adminpostcode"]; // Postcode/Zip code
-    $adminCountry = $params["admincountry"]; // eg. GB
-    $adminPhoneNumber = $params["adminphonenumber"]; // Phone number as the user provided it
-    $adminPhoneNumberFormatted = $params["adminfullphonenumber"]; // Format: +CC.xxxxxxxxxxxx
+    $ownerContact = new DomainNameContact($params["fullname"], $params["email"], $params["companyname"], $params["address1"], $params["address2"], $params["city"],
+        $params["state"], $params["postcode"], $params["countrycode"], $phone[0] ? $phone[0] : null,
+        isset($phone[1]) ? $phone[1] : null);
 
-    // domain addon purchase status
-    $enableDnsManagement = (bool)$params['dnsmanagement'];
-    $enableEmailForwarding = (bool)$params['emailforwarding'];
-    $enableIdProtection = (bool)$params['idprotection'];
 
-    /**
-     * Premium domain parameters.
-     *
-     * Premium domains enabled informs you if the admin user has enabled
-     * the selling of premium domain names. If this domain is a premium name,
-     * `premiumCost` will contain the cost price retrieved at the time of
-     * the order being placed. The premium order should only be processed
-     * if the cost price now matches that previously fetched amount.
-     */
-    $premiumDomainsEnabled = (bool)$params['premiumEnabled'];
-    $premiumDomainsCost = $params['premiumCost'];
+    $adminPhone = explode(".", $params["adminfullphonenumber"]);
 
-    // Build post data
-    $postfields = array(
-        'username' => $userIdentifier,
-        'password' => $apiKey,
-        'testmode' => $testMode,
-        'domain' => $sld . '.' . $tld,
-        'eppcode' => $eppCode,
-        'nameservers' => array(
-            'ns1' => $nameserver1,
-            'ns2' => $nameserver2,
-            'ns3' => $nameserver3,
-            'ns4' => $nameserver4,
-            'ns5' => $nameserver5,
-        ),
-        'years' => $registrationPeriod,
-        'contacts' => array(
-            'registrant' => array(
-                'firstname' => $firstName,
-                'lastname' => $lastName,
-                'companyname' => $companyName,
-                'email' => $email,
-                'address1' => $address1,
-                'address2' => $address2,
-                'city' => $city,
-                'state' => $state,
-                'zipcode' => $postcode,
-                'country' => $countryCode,
-                'phonenumber' => $phoneNumberFormatted,
-            ),
-            'tech' => array(
-                'firstname' => $adminFirstName,
-                'lastname' => $adminLastName,
-                'companyname' => $adminCompanyName,
-                'email' => $adminEmail,
-                'address1' => $adminAddress1,
-                'address2' => $adminAddress2,
-                'city' => $adminCity,
-                'state' => $adminState,
-                'zipcode' => $adminPostcode,
-                'country' => $adminCountry,
-                'phonenumber' => $adminPhoneNumberFormatted,
-            ),
-        ),
-        'dnsmanagement' => $enableDnsManagement,
-        'emailforwarding' => $enableEmailForwarding,
-        'idprotection' => $enableIdProtection,
-    );
+    $adminContact = new DomainNameContact($params["adminfirstname"] . " " . $params["adminlastname"], $params["adminemail"], $params["admincompanyname"], $params["adminaddress1"],
+        $params["adminaddress2"], $params["admincity"], $params["adminstate"], $params["adminpostcode"], $params["admincountrycode"],
+        $adminPhone[0] ? $adminPhone[0] : null,
+        isset($adminPhone[1]) ? $adminPhone[1] : null);
+
+
+    $privacyProxy = (bool)$params['idprotection'] ? 1 : 2;
+
+
+    $domainTransferDescriptor = new DomainNameTransferDescriptor(array($domainName . "," . $eppCode), $ownerContact, $adminContact, $adminContact, $adminContact, $privacyProxy);
+
 
     try {
-        $api = new ApiClient();
-        $api->call('Transfer', $postfields);
+
+        // Create the domain using the API.
+        $api = netistrar_GetAPIInstance($params);
+        $transaction = $api->domains()->transferCreate($domainTransferDescriptor);
+
+        logModuleCall("netistrar", "Transfer Domain", $domainTransferDescriptor, $transaction);
+
+        if ($transaction->getTransactionStatus() != "SUCCEEDED") {
+            $elementErrors = array_values($transaction->getTransactionElements()[$params['sld'] . "." . $params['tld']]->getElementErrors());
+            throw new Exception($elementErrors[0]->getMessage());
+        }
 
         return array(
             'success' => true,
         );
 
     } catch (\Exception $e) {
+
+        logModuleCall("netistrar", "Transfer Domain", $domainTransferDescriptor, $e);
+
         return array(
             'error' => $e->getMessage(),
         );
     }
+
+
 }
 
 /**
@@ -333,61 +252,28 @@ function netistrar_TransferDomain($params) {
  * @return array
  */
 function netistrar_RenewDomain($params) {
-    // user defined configuration values
-    $userIdentifier = $params['API Username'];
-    $apiKey = $params['API Key'];
-    $testMode = $params['Test Mode'];
-    $accountMode = $params['Account Mode'];
-    $emailPreference = $params['Email Preference'];
-    $additionalInfo = $params['Additional Information'];
 
-    // registration parameters
-    $sld = $params['sld'];
-    $tld = $params['tld'];
-    $registrationPeriod = $params['regperiod'];
-
-    // domain addon purchase status
-    $enableDnsManagement = (bool)$params['dnsmanagement'];
-    $enableEmailForwarding = (bool)$params['emailforwarding'];
-    $enableIdProtection = (bool)$params['idprotection'];
-
-    /**
-     * Premium domain parameters.
-     *
-     * Premium domains enabled informs you if the admin user has enabled
-     * the selling of premium domain names. If this domain is a premium name,
-     * `premiumCost` will contain the cost price retrieved at the time of
-     * the order being placed. A premium renewal should only be processed
-     * if the cost price now matches that previously fetched amount.
-     */
-    $premiumDomainsEnabled = (bool)$params['premiumEnabled'];
-    $premiumDomainsCost = $params['premiumCost'];
-
-    // Build post data.
-    $postfields = array(
-        'username' => $userIdentifier,
-        'password' => $apiKey,
-        'testmode' => $testMode,
-        'domain' => $sld . '.' . $tld,
-        'years' => $registrationPeriod,
-        'dnsmanagement' => $enableDnsManagement,
-        'emailforwarding' => $enableEmailForwarding,
-        'idprotection' => $enableIdProtection,
-    );
+    // Api instance
+    $api = netistrar_GetAPIInstance($params);
 
     try {
-        $api = new ApiClient();
-        $api->call('Renew', $postfields);
+        $transaction = $api->domains()->renew($params['sld'] . "." . $params['tld'], $params["regperiod"]);
+
+        logModuleCall("netistrar", "Renew Domain", $params['sld'] . "." . $params['tld'] . " -> " . $params["regperiod"] . " yrs", $transaction);
 
         return array(
             'success' => true,
         );
 
     } catch (\Exception $e) {
+        logModuleCall("netistrar", "Renew Domain", $params['sld'] . "." . $params['tld'] . " -> " . $params["regperiod"] . " yrs", $e);
+
         return array(
             'error' => $e->getMessage(),
         );
     }
+
+
 }
 
 
@@ -403,6 +289,7 @@ function netistrar_GetDomainInformation($params) {
 
     $info = $api->domains()->get($params['sld'] . "." . $params['tld']);
 
+    logModuleCall("netistrar", "Get Domain Info", $params['sld'] . "." . $params['tld'], $info);
 
     $expiryDate = date_create_from_format("d/m/Y H:i:s", $info->getExpiryDate());
     $expiryDate = WHMCS\Carbon::createFromDate($expiryDate->format("Y"), $expiryDate->format("m"), $expiryDate->format("d"));
@@ -411,8 +298,15 @@ function netistrar_GetDomainInformation($params) {
     if ($info->getLockedUntil()) {
         $lockedUntil = date_create_from_format("d/m/Y H:i:s", $info->getLockedUntil());
         $lockedUntil = WHMCS\Carbon::createFromDate($lockedUntil->format("Y"), $lockedUntil->format("m"), $lockedUntil->format("d"));
-
     }
+
+    $pendingUntil = null;
+    if ($info->getOwnerContact()->getPendingContact()) {
+        $pendingUntil = new DateTime();
+        $pendingUntil->add(new DateInterval("P1W"));
+        $pendingUntil = WHMCS\Carbon::createFromDate($pendingUntil->format("Y"), $pendingUntil->format("m"), $pendingUntil->format("d"));
+    }
+
 
     return (new Domain)
         ->setDomain($info->getDomainName())
@@ -422,8 +316,10 @@ function netistrar_GetDomainInformation($params) {
         ->setTransferLockExpiryDate($lockedUntil)
         ->setExpiryDate($expiryDate)
         ->setIdProtectionStatus($info->getPrivacyProxy() == 1)
+        ->setIsIrtpEnabled($info->getOwnerContact()->getPendingContact() ? true : false)
+        ->setIrtpTransferLock($info->getOwnerContact()->getPendingContact() ? true : false)
         ->setDomainContactChangePending($info->getOwnerContact()->getPendingContact() ? true : false)
-        ->setDomainContactChangeExpiryDate(WHMCS\Carbon::now())
+        ->setDomainContactChangeExpiryDate($pendingUntil)
         ->setRegistrantEmailAddress($info->getOwnerContact()->getEmailAddress())
         ->setIrtpVerificationTriggerFields(
             [
@@ -714,7 +610,8 @@ function netistrar_SaveContactDetails($params) {
         $transaction = $api->domains()->update($domainNameUpdateDescriptor);
 
         if ($transaction->getTransactionStatus() != "SUCCEEDED") {
-            throw new Exception("An unexpected error occurred processing this contact update.");
+            $elementErrors = array_values($transaction->getTransactionElements()[$params['sld'] . "." . $params['tld']]->getElementErrors());
+            throw new Exception($elementErrors[0]->getMessage());
         }
 
         logModuleCall("netistrar", "Save Contact Details", $domainNameUpdateDescriptor, $transaction);
@@ -868,144 +765,41 @@ function netistrar_GetDomainSuggestions($params) {
  * @return array
  */
 function netistrar_SaveRegistrarLock($params) {
-    // user defined configuration values
-    $userIdentifier = $params['API Username'];
-    $apiKey = $params['API Key'];
-    $testMode = $params['Test Mode'];
-    $accountMode = $params['Account Mode'];
-    $emailPreference = $params['Email Preference'];
-    $additionalInfo = $params['Additional Information'];
 
-    // domain parameters
-    $sld = $params['sld'];
-    $tld = $params['tld'];
-
-    // lock status
-    $lockStatus = $params['lockenabled'];
-
-    // Build post data
-    $postfields = array(
-        'username' => $userIdentifier,
-        'password' => $apiKey,
-        'testmode' => $testMode,
-        'domain' => $sld . '.' . $tld,
-        'registrarlock' => ($lockStatus == 'locked') ? 1 : 0,
-    );
+    // Api instance
+    $api = netistrar_GetAPIInstance($params);
 
     try {
-        $api = new ApiClient();
-        $api->call('SetLockStatus', $postfields);
 
-        return array(
-            'success' => 'success',
-        );
+        // id protection parameter
+        $lockStatus = $params['lockenabled'];
 
-    } catch (\Exception $e) {
-        return array(
-            'error' => $e->getMessage(),
-        );
-    }
-}
+        // Update the domain with new details.
+        $domainNameUpdateDescriptor = new DomainNameUpdateDescriptor(array($params['sld'] . "." . $params['tld']), null, null, null, null, null, $lockStatus);
+        $transaction = $api->domains()->update($domainNameUpdateDescriptor);
 
-/**
- * Get DNS Records for DNS Host Record Management.
- *
- * @param array $params common module parameters
- *
- * @see https://developers.whmcs.com/domain-registrars/module-parameters/
- *
- * @return array DNS Host Records
- */
-function netistrar_GetDNS($params) {
-    // user defined configuration values
-    $userIdentifier = $params['API Username'];
-    $apiKey = $params['API Key'];
-    $testMode = $params['Test Mode'];
-    $accountMode = $params['Account Mode'];
-    $emailPreference = $params['Email Preference'];
-    $additionalInfo = $params['Additional Information'];
-
-    // domain parameters
-    $sld = $params['sld'];
-    $tld = $params['tld'];
-
-    // Build post data
-    $postfields = array(
-        'username' => $userIdentifier,
-        'password' => $apiKey,
-        'testmode' => $testMode,
-        'domain' => $sld . '.' . $tld,
-    );
-
-    try {
-        $api = new ApiClient();
-        $api->call('GetDNSHostRecords', $postfields);
-
-        $hostRecords = array();
-        foreach ($api->getFromResponse('records') as $record) {
-            $hostRecords[] = array(
-                "hostname" => $record['name'], // eg. www
-                "type" => $record['type'], // eg. A
-                "address" => $record['address'], // eg. 10.0.0.1
-                "priority" => $record['mxpref'], // eg. 10 (N/A for non-MX records)
-            );
+        if ($transaction->getTransactionStatus() != "SUCCEEDED") {
+            $elementErrors = array_values($transaction->getTransactionElements()[$params['sld'] . "." . $params['tld']]->getElementErrors());
+            throw new Exception($elementErrors[0]->getMessage());
         }
-        return $hostRecords;
+
+        logModuleCall("netistrar", "Registrar Lock Update", $domainNameUpdateDescriptor, $transaction);
+
+        return array(
+            'success' => true,
+        );
+
 
     } catch (\Exception $e) {
+
+        logModuleCall("netistrar", "Registrar Lock Update", $domainNameUpdateDescriptor, $e);
+
         return array(
             'error' => $e->getMessage(),
         );
     }
-}
 
-/**
- * Update DNS Host Records.
- *
- * @param array $params common module parameters
- *
- * @see https://developers.whmcs.com/domain-registrars/module-parameters/
- *
- * @return array
- */
-function netistrar_SaveDNS($params) {
-    // user defined configuration values
-    $userIdentifier = $params['API Username'];
-    $apiKey = $params['API Key'];
-    $testMode = $params['Test Mode'];
-    $accountMode = $params['Account Mode'];
-    $emailPreference = $params['Email Preference'];
-    $additionalInfo = $params['Additional Information'];
 
-    // domain parameters
-    $sld = $params['sld'];
-    $tld = $params['tld'];
-
-    // dns record parameters
-    $dnsrecords = $params['dnsrecords'];
-
-    // Build post data
-    $postfields = array(
-        'username' => $userIdentifier,
-        'password' => $apiKey,
-        'testmode' => $testMode,
-        'domain' => $sld . '.' . $tld,
-        'records' => $dnsrecords,
-    );
-
-    try {
-        $api = new ApiClient();
-        $api->call('GetDNSHostRecords', $postfields);
-
-        return array(
-            'success' => 'success',
-        );
-
-    } catch (\Exception $e) {
-        return array(
-            'error' => $e->getMessage(),
-        );
-    }
 }
 
 /**
@@ -1018,43 +812,36 @@ function netistrar_SaveDNS($params) {
  * @return array
  */
 function netistrar_IDProtectToggle($params) {
-    // user defined configuration values
-    $userIdentifier = $params['API Username'];
-    $apiKey = $params['API Key'];
-    $testMode = $params['Test Mode'];
-    $accountMode = $params['Account Mode'];
-    $emailPreference = $params['Email Preference'];
-    $additionalInfo = $params['Additional Information'];
 
-    // domain parameters
-    $sld = $params['sld'];
-    $tld = $params['tld'];
 
-    // id protection parameter
-    $protectEnable = (bool)$params['protectenable'];
-
-    // Build post data
-    $postfields = array(
-        'username' => $userIdentifier,
-        'password' => $apiKey,
-        'testmode' => $testMode,
-        'domain' => $sld . '.' . $tld,
-    );
+    // Api instance
+    $api = netistrar_GetAPIInstance($params);
 
     try {
-        $api = new ApiClient();
 
-        if ($protectEnable) {
-            $api->call('EnableIDProtection', $postfields);
-        } else {
-            $api->call('DisableIDProtection', $postfields);
+        // id protection parameter
+        $ppSetting = (bool)$params['protectenable'] ? 1 : 2;
+
+        // Update the domain with new details.
+        $domainNameUpdateDescriptor = new DomainNameUpdateDescriptor(array($params['sld'] . "." . $params['tld']), null, null, null, null, null, null, $ppSetting);
+        $transaction = $api->domains()->update($domainNameUpdateDescriptor);
+
+        if ($transaction->getTransactionStatus() != "SUCCEEDED") {
+            $elementErrors = array_values($transaction->getTransactionElements()[$params['sld'] . "." . $params['tld']]->getElementErrors());
+            throw new Exception($elementErrors[0]->getMessage());
         }
 
+        logModuleCall("netistrar", "ID Protection Toggle", $domainNameUpdateDescriptor, $transaction);
+
         return array(
-            'success' => 'success',
+            'success' => true,
         );
 
+
     } catch (\Exception $e) {
+
+        logModuleCall("netistrar", "ID Protection Toggle", $domainNameUpdateDescriptor, $e);
+
         return array(
             'error' => $e->getMessage(),
         );
@@ -1075,6 +862,38 @@ function netistrar_IDProtectToggle($params) {
  *
  */
 function netistrar_GetEPPCode($params) {
+
+
+    // Api instance
+    $api = netistrar_GetAPIInstance($params);
+
+    try {
+
+        $info = $api->domains()->get($params['sld'] . "." . $params['tld']);
+
+        logModuleCall("netistrar", "Get Domain Info", $params['sld'] . "." . $params['tld'], $info);
+
+        if ($info->getLocked()) {
+
+            return array('error' => "This domain is currently locked for transfer");
+
+        } else {
+            return array(
+                'eppcode' => $info->getAuthCode()
+            );
+
+        }
+
+    } catch (\Exception $e) {
+
+        logModuleCall("netistrar", "Get Domain Info", $params['sld'] . "." . $params['tld'], $e);
+
+        return array(
+            'error' => $e->getMessage(),
+        );
+    }
+
+
     // user defined configuration values
     $userIdentifier = $params['API Username'];
     $apiKey = $params['API Key'];
@@ -1183,45 +1002,45 @@ function netistrar_ReleaseDomain($params) {
  * @return array
  */
 function netistrar_RegisterNameserver($params) {
-    // user defined configuration values
-    $userIdentifier = $params['API Username'];
-    $apiKey = $params['API Key'];
-    $testMode = $params['Test Mode'];
-    $accountMode = $params['Account Mode'];
-    $emailPreference = $params['Email Preference'];
-    $additionalInfo = $params['Additional Information'];
-
-    // domain parameters
-    $sld = $params['sld'];
-    $tld = $params['tld'];
 
     // nameserver parameters
     $nameserver = $params['nameserver'];
+    $prefix = str_replace("." . $params['sld'] . "." . $params['tld'], "", $nameserver);
+
     $ipAddress = $params['ipaddress'];
 
-    // Build post data
-    $postfields = array(
-        'username' => $userIdentifier,
-        'password' => $apiKey,
-        'testmode' => $testMode,
-        'domain' => $sld . '.' . $tld,
-        'nameserver' => $nameserver,
-        'ip' => $ipAddress,
-    );
+
+    // Api instance
+    $api = netistrar_GetAPIInstance($params);
 
     try {
-        $api = new ApiClient();
-        $api->call('RegisterNameserver', $postfields);
+
+
+        $transaction = $api->domains()->glueRecordsSet($params['sld'] . "." . $params['tld'],
+            array(new DomainNameGlueRecord($prefix, $ipAddress)));
+
+        if ($transaction->getTransactionStatus() != "SUCCEEDED") {
+            $elementErrors = array_values($transaction->getTransactionElements()[$prefix]->getElementErrors());
+            throw new Exception(str_ireplace("glue record", "private nameserver", $elementErrors[0]->getMessage()));
+        }
+
+        logModuleCall("netistrar", "Register Child Nameserver", new DomainNameGlueRecord($prefix, $ipAddress), $transaction);
 
         return array(
-            'success' => 'success',
+            'success' => true,
         );
 
+
     } catch (\Exception $e) {
+
+        logModuleCall("netistrar", "Register Child Nameserver", new DomainNameGlueRecord($prefix, $ipAddress), $e);
+
         return array(
             'error' => $e->getMessage(),
         );
     }
+
+
 }
 
 /**
@@ -1236,47 +1055,10 @@ function netistrar_RegisterNameserver($params) {
  * @return array
  */
 function netistrar_ModifyNameserver($params) {
-    // user defined configuration values
-    $userIdentifier = $params['API Username'];
-    $apiKey = $params['API Key'];
-    $testMode = $params['Test Mode'];
-    $accountMode = $params['Account Mode'];
-    $emailPreference = $params['Email Preference'];
-    $additionalInfo = $params['Additional Information'];
 
-    // domain parameters
-    $sld = $params['sld'];
-    $tld = $params['tld'];
+    $params["ipaddress"] = $params["newipaddress"];
+    return netistrar_RegisterNameserver($params);
 
-    // nameserver parameters
-    $nameserver = $params['nameserver'];
-    $currentIpAddress = $params['currentipaddress'];
-    $newIpAddress = $params['newipaddress'];
-
-    // Build post data
-    $postfields = array(
-        'username' => $userIdentifier,
-        'password' => $apiKey,
-        'testmode' => $testMode,
-        'domain' => $sld . '.' . $tld,
-        'nameserver' => $nameserver,
-        'currentip' => $currentIpAddress,
-        'newip' => $newIpAddress,
-    );
-
-    try {
-        $api = new ApiClient();
-        $api->call('ModifyNameserver', $postfields);
-
-        return array(
-            'success' => 'success',
-        );
-
-    } catch (\Exception $e) {
-        return array(
-            'error' => $e->getMessage(),
-        );
-    }
 }
 
 /**
@@ -1289,39 +1071,36 @@ function netistrar_ModifyNameserver($params) {
  * @return array
  */
 function netistrar_DeleteNameserver($params) {
-    // user defined configuration values
-    $userIdentifier = $params['API Username'];
-    $apiKey = $params['API Key'];
-    $testMode = $params['Test Mode'];
-    $accountMode = $params['Account Mode'];
-    $emailPreference = $params['Email Preference'];
-    $additionalInfo = $params['Additional Information'];
-
-    // domain parameters
-    $sld = $params['sld'];
-    $tld = $params['tld'];
 
     // nameserver parameters
     $nameserver = $params['nameserver'];
+    $prefix = str_replace("." . $params['sld'] . "." . $params['tld'], "", $nameserver);
 
-    // Build post data
-    $postfields = array(
-        'username' => $userIdentifier,
-        'password' => $apiKey,
-        'testmode' => $testMode,
-        'domain' => $sld . '.' . $tld,
-        'nameserver' => $nameserver,
-    );
+
+    // Api instance
+    $api = netistrar_GetAPIInstance($params);
 
     try {
-        $api = new ApiClient();
-        $api->call('DeleteNameserver', $postfields);
+
+        $transaction = $api->domains()->glueRecordsRemove($params['sld'] . "." . $params['tld'],
+            array($prefix));
+
+        if ($transaction->getTransactionStatus() != "SUCCEEDED") {
+            $elementErrors = array_values($transaction->getTransactionElements()[$prefix]->getElementErrors());
+            throw new Exception(str_ireplace("glue record", "private nameserver", $elementErrors[0]->getMessage()));
+        }
+
+        logModuleCall("netistrar", "Remove Child Nameserver", new DomainNameGlueRecord($prefix), $transaction);
 
         return array(
-            'success' => 'success',
+            'success' => true,
         );
 
+
     } catch (\Exception $e) {
+
+        logModuleCall("netistrar", "Remove Child Nameserver", new DomainNameGlueRecord($prefix), $e);
+
         return array(
             'error' => $e->getMessage(),
         );
