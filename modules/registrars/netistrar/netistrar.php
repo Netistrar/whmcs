@@ -22,7 +22,7 @@ use WHMCS\Domains\DomainLookup\SearchResult;
 use WHMCS\Module\Registrar\Registrarmodule\ApiClient;
 
 // Run off vendor if exists for development
-if (file_exists(__DIR__ . "/../../../vendor/netistrar2"))
+if (file_exists(__DIR__ . "/../../../vendor/netistrar"))
     include __DIR__ . "/../../../vendor/autoload.php";
 else
     include __DIR__ . "/lib/autoload.php";
@@ -58,9 +58,9 @@ function netistrar_getConfigArray() {
         "environment" => array(
             "FriendlyName" => "Environment",
             "Type" => "radio", # Radio Selection of Options
-            "Options" => "Development,OTE,Production",
+            "Options" => "OTE,Production",
             "Description" => "Which environment to connect to",
-            "Default" => "Development",
+            "Default" => "OTE",
         ),
         // The API Key
         'apiKey' => array(

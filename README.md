@@ -4,7 +4,7 @@
 
 This is the officially supported WHMCS registrar module for the Netistrar registry platform.  This is currently in BETA testing. 
 
-To use this module, first sign up for a Netistrar account at [https://netistrar.com] and then contact [support@netistrar.com] to obtain 
+To use this module, first sign up for a Netistrar account at [https://netistrar.com](https://netistrar.com) and then contact [Netistrar Support](mailto:support@netistrar.com) to obtain 
 API credentials.
 
 
@@ -16,3 +16,6 @@ folder in your WHMCS installation.
 You will then be able to activate the Netistrar module by visiting __/admin/configregistrars.php__ from within WHMCS as admin.  
 
 You will need to supply your API credentials and you can connect to the OTE for testing before activating for production.
+
+
+
