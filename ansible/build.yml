@@ -1,0 +1,39 @@
+---
+- hosts: localhost
+  connection: local
+  vars:
+    vendor_root: "../vendor"
+    lib_root: "../modules/registrars/netistrar/lib"
+  vars_files:
+    - included_files
+
+  tasks:
+
+    - name: Delete libs directories
+      file:
+        path: "{{lib_root}}/{{item}}"
+        state: absent
+      with_items:
+        - "Netistrar"
+        - "Kinikit"
+
+
+    - name: Copy Netistrar Client
+      copy:
+        src: "{{vendor_root}}/netistrar/reseller-api/src/Netistrar"
+        dest: "{{lib_root}}"
+
+    - name: Create Kinikit Directories
+      file:
+        path: "{{lib_root}}/Kinikit/{{item}}"
+        state: directory
+      with_items:
+        "{{kinikit_dirs}}"
+
+
+    - name: Copy Kinikit Files
+      copy:
+        src: "{{vendor_root}}/oxil/kinikit-core/src/{{item}}"
+        dest: "{{lib_root}}/Kinikit/{{item}}"
+      with_items:
+        "{{kinikit_files}}"

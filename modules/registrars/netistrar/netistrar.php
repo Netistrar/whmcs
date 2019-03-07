@@ -9,6 +9,7 @@ if (!defined("WHMCS")) {
 }
 
 use Netistrar\ClientAPI\APIProvider;
+use Netistrar\ClientAPI\Exception\TransactionException;
 use Netistrar\ClientAPI\Objects\Domain\Descriptor\DomainNameAvailabilityDescriptor;
 use Netistrar\ClientAPI\Objects\Domain\Descriptor\DomainNameCreateDescriptor;
 use Netistrar\ClientAPI\Objects\Domain\Descriptor\DomainNameTransferDescriptor;
@@ -20,7 +21,11 @@ use WHMCS\Domains\DomainLookup\ResultsList;
 use WHMCS\Domains\DomainLookup\SearchResult;
 use WHMCS\Module\Registrar\Registrarmodule\ApiClient;
 
-include __DIR__ . "/lib/autoloader.php";
+// Run off vendor if exists for development
+if (file_exists(__DIR__ . "/../../../vendor/netistrar2"))
+    include __DIR__ . "/../../../vendor/autoload.php";
+else
+    include __DIR__ . "/lib/autoload.php";
 
 
 /**
@@ -177,6 +182,8 @@ function netistrar_TransferDomain($params) {
     $domainName = $params['sld'] . "." . $params['tld'];
     $eppCode = $params['eppcode'];
 
+    logModuleCall("netistrar", "EPPCODE", $params, $eppCode);
+
     // Construct nameservers
     $nameservers = array();
     if ($params["ns1"]) $nameservers[] = $params["ns1"];
@@ -284,53 +291,81 @@ function netistrar_RenewDomain($params) {
  */
 function netistrar_GetDomainInformation($params) {
 
-    // Api instance
-    $api = netistrar_GetAPIInstance($params);
 
-    $info = $api->domains()->get($params['sld'] . "." . $params['tld']);
+    try {
 
-    logModuleCall("netistrar", "Get Domain Info", $params['sld'] . "." . $params['tld'], $info);
+        // Api instance
+        $api = netistrar_GetAPIInstance($params);
 
-    $expiryDate = date_create_from_format("d/m/Y H:i:s", $info->getExpiryDate());
-    $expiryDate = WHMCS\Carbon::createFromDate($expiryDate->format("Y"), $expiryDate->format("m"), $expiryDate->format("d"));
+        $info = $api->domains()->get($params['sld'] . "." . $params['tld']);
 
-    $lockedUntil = null;
-    if ($info->getLockedUntil()) {
-        $lockedUntil = date_create_from_format("d/m/Y H:i:s", $info->getLockedUntil());
-        $lockedUntil = WHMCS\Carbon::createFromDate($lockedUntil->format("Y"), $lockedUntil->format("m"), $lockedUntil->format("d"));
-    }
+        logModuleCall("netistrar", "Get Domain Info", $params['sld'] . "." . $params['tld'], $info);
 
-    $pendingUntil = null;
-    if ($info->getOwnerContact()->getPendingContact()) {
-        $pendingUntil = new DateTime();
-        $pendingUntil->add(new DateInterval("P1W"));
-        $pendingUntil = WHMCS\Carbon::createFromDate($pendingUntil->format("Y"), $pendingUntil->format("m"), $pendingUntil->format("d"));
-    }
+        $expiryDate = date_create_from_format("d/m/Y H:i:s", $info->getExpiryDate());
+        $expiryDate = WHMCS\Carbon::createFromDate($expiryDate->format("Y"), $expiryDate->format("m"), $expiryDate->format("d"));
+
+        $lockedUntil = null;
+        if ($info->getLockedUntil()) {
+            $lockedUntil = date_create_from_format("d/m/Y H:i:s", $info->getLockedUntil());
+            $lockedUntil = WHMCS\Carbon::createFromDate($lockedUntil->format("Y"), $lockedUntil->format("m"), $lockedUntil->format("d"));
+        }
+
+        $pendingUntil = null;
+        if ($info->getOwnerContact()->getPendingContact()) {
+            $pendingUntil = new DateTime();
+            $pendingUntil->add(new DateInterval("P1W"));
+            $pendingUntil = WHMCS\Carbon::createFromDate($pendingUntil->format("Y"), $pendingUntil->format("m"), $pendingUntil->format("d"));
+        }
 
 
-    return (new Domain)
-        ->setDomain($info->getDomainName())
-        ->setNameservers($info->getNameservers())
-        ->setRegistrationStatus($info->getStatus())
-        ->setTransferLock($info->getLocked())
-        ->setTransferLockExpiryDate($lockedUntil)
-        ->setExpiryDate($expiryDate)
-        ->setIdProtectionStatus($info->getPrivacyProxy() == 1)
-        ->setIsIrtpEnabled($info->getOwnerContact()->getPendingContact() ? true : false)
-        ->setIrtpTransferLock($info->getOwnerContact()->getPendingContact() ? true : false)
-        ->setDomainContactChangePending($info->getOwnerContact()->getPendingContact() ? true : false)
-        ->setDomainContactChangeExpiryDate($pendingUntil)
-        ->setRegistrantEmailAddress($info->getOwnerContact()->getEmailAddress())
-        ->setIrtpVerificationTriggerFields(
-            [
-                'Registrant' => [
-                    'First Name',
-                    'Last Name',
-                    'Organization Name',
-                    'Email',
-                ],
-            ]
+        return (new Domain)
+            ->setDomain($info->getDomainName())
+            ->setNameservers($info->getNameservers())
+            ->setRegistrationStatus($info->getStatus())
+            ->setTransferLock($info->getLocked())
+            ->setTransferLockExpiryDate($lockedUntil)
+            ->setExpiryDate($expiryDate)
+            ->setIdProtectionStatus($info->getPrivacyProxy() == 1)
+            ->setIsIrtpEnabled($info->getOwnerContact()->getPendingContact() ? true : false)
+            ->setIrtpTransferLock($info->getOwnerContact()->getPendingContact() ? true : false)
+            ->setDomainContactChangePending($info->getOwnerContact()->getPendingContact() ? true : false)
+            ->setDomainContactChangeExpiryDate($pendingUntil)
+            ->setRegistrantEmailAddress($info->getOwnerContact()->getEmailAddress())
+            ->setIrtpVerificationTriggerFields(
+                [
+                    'Registrant' => [
+                        'First Name',
+                        'Last Name',
+                        'Organization Name',
+                        'Email',
+                    ],
+                ]
+            );
+
+
+    } catch (\Exception $e) {
+
+        logModuleCall("netistrar", "Get Domain Info", $params['sld'] . "." . $params['tld'] . " -> " . $params["regperiod"] . " yrs", $e);
+
+        $message = $e->getMessage();
+        $reason = "UNKNOWN";
+        if ($e instanceof TransactionException) {
+
+            // Store the first reason.
+            $reason = array_keys($e->getTransactionErrors());
+            $reason = array_shift($reason);
+
+            $transactionErrors = array_values($e->getTransactionErrors());
+            $message = $transactionErrors[0]->getMessage();
+
+        }
+
+        return array(
+            'error' => $message,
+            'reason' => $reason
         );
+    }
+
 
 }
 
@@ -1121,42 +1156,41 @@ function netistrar_DeleteNameserver($params) {
  * @return array
  */
 function netistrar_Sync($params) {
-    // user defined configuration values
-    $userIdentifier = $params['API Username'];
-    $apiKey = $params['API Key'];
-    $testMode = $params['Test Mode'];
-    $accountMode = $params['Account Mode'];
-    $emailPreference = $params['Email Preference'];
-    $additionalInfo = $params['Additional Information'];
 
-    // domain parameters
-    $sld = $params['sld'];
-    $tld = $params['tld'];
 
-    // Build post data
-    $postfields = array(
-        'username' => $userIdentifier,
-        'password' => $apiKey,
-        'testmode' => $testMode,
-        'domain' => $sld . '.' . $tld,
-    );
+    /**
+     * Get domain info for the domain passed
+     */
+    $domainInfo = netistrar_GetDomainInformation($params);
 
-    try {
-        $api = new ApiClient();
-        $api->call('GetDomainInfo', $postfields);
+    $returnArray = array("expirydate" => "", "active" => true, "expired" => false, "transferredAway" => false);
 
-        return array(
-            'expirydate' => $api->getFromResponse('expirydate'), // Format: YYYY-MM-DD
-            'active' => (bool)$api->getFromResponse('active'), // Return true if the domain is active
-            'expired' => (bool)$api->getFromResponse('expired'), // Return true if the domain has expired
-            'transferredAway' => (bool)$api->getFromResponse('transferredaway'), // Return true if the domain is transferred out
-        );
+    // Grab the registration status.
+    if ($domainInfo instanceof Domain) {
+        $status = $domainInfo->getRegistrationStatus();
 
-    } catch (\Exception $e) {
-        return array(
-            'error' => $e->getMessage(),
-        );
+        $returnArray["expirydate"] = $domainInfo->getExpiryDate();
+
+        if ($status != "ACTIVE") {
+            $returnArray["active"] = false;
+        }
+
+        if ($status == "EXPIRED" || $status == "RGP") {
+            $returnArray["expired"] = true;
+        }
+
+    } else if (is_array($domainInfo)) {
+
+        if ($domainInfo["reason"] == "DOMAIN_NOT_IN_ACCOUNT") {
+            $returnArray["transferredAway"] = true;
+        } else {
+            return $domainInfo;
+        }
+
     }
+
+    return $returnArray;
+
 }
 
 /**
@@ -1172,50 +1206,35 @@ function netistrar_Sync($params) {
  * @return array
  */
 function netistrar_TransferSync($params) {
-    // user defined configuration values
-    $userIdentifier = $params['API Username'];
-    $apiKey = $params['API Key'];
-    $testMode = $params['Test Mode'];
-    $accountMode = $params['Account Mode'];
-    $emailPreference = $params['Email Preference'];
-    $additionalInfo = $params['Additional Information'];
 
-    // domain parameters
-    $sld = $params['sld'];
-    $tld = $params['tld'];
+    /**
+     * Get domain info for the domain passed
+     */
+    $domainInfo = netistrar_GetDomainInformation($params);
 
-    // Build post data
-    $postfields = array(
-        'username' => $userIdentifier,
-        'password' => $apiKey,
-        'testmode' => $testMode,
-        'domain' => $sld . '.' . $tld,
-    );
+    // Grab the registration status.
+    if ($domainInfo instanceof Domain) {
+        $status = $domainInfo->getRegistrationStatus();
 
-    try {
-        $api = new ApiClient();
-        $api->call('CheckDomainTransfer', $postfields);
-
-        if ($api->getFromResponse('transfercomplete')) {
-            return array(
-                'completed' => true,
-                'expirydate' => $api->getFromResponse('expirydate'), // Format: YYYY-MM-DD
-            );
-        } elseif ($api->getFromResponse('transferfailed')) {
-            return array(
-                'failed' => true,
-                'reason' => $api->getFromResponse('failurereason'), // Reason for the transfer failure if available
-            );
+        // Return completion when active
+        if ($status == "ACTIVE") {
+            return array("completed" => true, "expirydate" => $domainInfo->getExpiryDate());
         } else {
-            // No status change, return empty array
+            // No status change
             return array();
         }
 
-    } catch (\Exception $e) {
-        return array(
-            'error' => $e->getMessage(),
-        );
+
+    } else if (is_array($domainInfo)) {
+
+        if ($domainInfo["reason"] == "DOMAIN_NOT_IN_ACCOUNT") {
+            return array("failed" => true, "reason" => "Transfer was rejected / cancelled");
+        } else {
+            return $domainInfo;
+        }
     }
+
+
 }
 
 
@@ -1235,7 +1254,7 @@ function netistrar_GetAPIInstance($params) {
             $url = "http://restapi.netistrar.test";
             break;
         case "OTE":
-            $url = "https://ote-restapi.netistrar.com";
+            $url = "https://restapi.netistrar-ote.uk";
             break;
         case "Production":
             $url = "https://restapi.netistrar.com";

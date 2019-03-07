@@ -1,0 +1,31 @@
+kinikit_dirs:
+  - Exception
+  - Object
+  - Util/Annotation
+  - Util/HTTP
+  - Util/Logging
+  - Util/Serialisation/JSON
+  - Util/Serialisation/XML
+
+kinikit_files:
+  - Exception/SerialisableException.php
+  - Exception/HttpRequestErrorException.php
+  - Exception/PropertyNotWritableException.php
+  - Object/SerialisableObject.php
+  - Util/CodeUtils.php
+  - Util/Annotation/Annotation.php
+  - Util/Annotation/ClassAnnotations.php
+  - Util/Annotation/ClassAnnotationParser.php
+  - Util/ArrayUtils.php
+  - Util/HTTP/HttpRemoteRequest.php
+  - Util/HTTP/WebServiceProxy.php
+  - Util/Logging/Logger.php
+  - Util/SerialisableArrayUtils.php
+  - Util/Serialisation/ObjectToFormatConverter.php
+  - Util/Serialisation/FormatToObjectConverter.php
+  - Util/Serialisation/Serialisable.php
+  - Util/Serialisation/JSON/JSONToObjectConverter.php
+  - Util/Serialisation/JSON/ObjectToJSONConverter.php
+  - Util/Serialisation/XML/XMLToObjectConverter.php
+  - Util/Serialisation/XML/ObjectToXMLConverter.php
+
