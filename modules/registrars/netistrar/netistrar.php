@@ -757,30 +757,23 @@ function netistrar_GetDomainSuggestions($params) {
     try {
 
         $apiProvider = netistrar_GetAPIInstance($params);
-        $availability = $apiProvider->domains()->hintedAvailability(new DomainNameAvailabilityDescriptor($searchTerm, null, $tldsToInclude, true));
+        $availabilityDescriptor = new DomainNameAvailabilityDescriptor($searchTerm, null, $tldsToInclude, true);
+
+        $availability = $apiProvider->domains()->hintedAvailability($availabilityDescriptor);
+
 
         $results = new ResultsList();
-        foreach ($tldsToInclude as $tld) {
-
-            $suggestions = isset($availability->getSuggestions()[$tld]) ? $availability->getSuggestions()[$tld] : array();
-
-            // Convert an API availability result to a search result.
-            if (sizeof($suggestions) > 0) {
-                $searchResult = netistrar_ConvertAPIAvailabilityResultToSearchResult($suggestions[0]);
-                $results->append($searchResult);
-            }
-
-            if (sizeof($suggestions) > 1) {
-                $searchResult = netistrar_ConvertAPIAvailabilityResultToSearchResult($suggestions[1]);
-                $results->append($searchResult);
-            }
-
-
+        foreach ($availability->getSuggestions() as $suggestion) {
+            $searchResult = netistrar_ConvertAPIAvailabilityResultToSearchResult($suggestion);
+            $results->append($searchResult);
         }
 
         return $results;
 
     } catch (\Exception $e) {
+
+
+        file_put_contents("/var/www/ping", var_export($e, true));
 
         return array(
             'error' => $e->getMessage(),
