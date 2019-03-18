@@ -99,7 +99,6 @@ function netistrar_getConfigArray() {
  */
 function netistrar_RegisterDomain($params) {
 
-
     // Create the domain names structure.
     $domainNames = array($params['sld'] . "." . $params['tld']);
 
@@ -114,9 +113,15 @@ function netistrar_RegisterDomain($params) {
 
     $phone = explode(".", $params["fullphonenumber"]);
 
+
+    $additionalData = array();
+    if (isset($params["additionalfields"])) {
+        $additionalData = netistrar_ConvertAdditionalFieldsFromWHMCS($params["tld"], $params["additionalfields"]);
+    }
+
     $ownerContact = new DomainNameContact($params["fullname"], $params["email"], $params["companyname"], $params["address1"], $params["address2"], $params["city"],
         $params["state"], $params["postcode"], $params["countrycode"], $phone[0] ? $phone[0] : null,
-        isset($phone[1]) ? $phone[1] : null);
+        isset($phone[1]) ? $phone[1] : null, null, null, null, null, $additionalData);
 
 
     $adminPhone = explode(".", $params["adminfullphonenumber"]);
@@ -124,7 +129,7 @@ function netistrar_RegisterDomain($params) {
     $adminContact = new DomainNameContact($params["adminfirstname"] . " " . $params["adminlastname"], $params["adminemail"], $params["admincompanyname"], $params["adminaddress1"],
         $params["adminaddress2"], $params["admincity"], $params["adminstate"], $params["adminpostcode"], $params["admincountrycode"],
         $adminPhone[0] ? $adminPhone[0] : null,
-        isset($adminPhone[1]) ? $adminPhone[1] : null);
+        isset($adminPhone[1]) ? $adminPhone[1] : null, null, null, null, null, $additionalData);
 
 
     $privacyProxy = (bool)$params['idprotection'] ? 1 : 2;
@@ -140,7 +145,8 @@ function netistrar_RegisterDomain($params) {
         $transaction = $api->domains()->create($domainRegistrationDescriptor);
 
         if ($transaction->getTransactionStatus() != "SUCCEEDED") {
-            throw new Exception("An unexpected error occurred processing this registration.");
+            $elementErrors = array_values($transaction->getTransactionElements()[$domainNames[0]]->getElementErrors());
+            throw new Exception($elementErrors[0]->getMessage());
         }
 
         logModuleCall("netistrar", "Register Domain", $domainRegistrationDescriptor, $transaction);
@@ -318,6 +324,12 @@ function netistrar_GetDomainInformation($params) {
         }
 
 
+        // Handle non ITRP domains.
+        $nonIRTPDomains = array("uk", "eu");
+        $exploded = explode(".", $params["tld"]);
+        $tld = array_pop($exploded);
+        $itrp = !in_array($tld, $nonIRTPDomains);
+
         return (new Domain)
             ->setDomain($info->getDomainName())
             ->setNameservers($info->getNameservers())
@@ -332,14 +344,14 @@ function netistrar_GetDomainInformation($params) {
             ->setDomainContactChangeExpiryDate($pendingUntil)
             ->setRegistrantEmailAddress($info->getOwnerContact()->getEmailAddress())
             ->setIrtpVerificationTriggerFields(
-                [
+                $itrp ? [
                     'Registrant' => [
                         'First Name',
                         'Last Name',
                         'Organization Name',
                         'Email',
                     ],
-                ]
+                ] : []
             );
 
 
@@ -444,12 +456,9 @@ function netistrar_GetContactDetails($params) {
         $info = $api->domains()->get($params['sld'] . "." . $params['tld']);
 
         $owner = explode(" ", $info->getOwnerContact()->getName());
-        $technical = explode(" ", $info->getTechnicalContact()->getName());
-        $billing = explode(" ", $info->getBillingContact()->getName());
-        $admin = explode(" ", $info->getAdminContact()->getName());
 
 
-        return array(
+        $details = array(
             'Registrant' => array(
                 'First Name' => $owner[0],
                 'Last Name' => isset($owner[1]) ? $owner[1] : "",
@@ -463,8 +472,14 @@ function netistrar_GetContactDetails($params) {
                 'Country' => $info->getOwnerContact()->getCountry(),
                 'Phone Number' => $info->getOwnerContact()->getTelephone() ? $info->getOwnerContact()->getTelephoneDiallingCode() . "." . $info->getOwnerContact()->getTelephone() : "",
                 'Fax Number' => $info->getOwnerContact()->getFax() ? $info->getOwnerContact()->getFaxDiallingCode() . "." . $info->getOwnerContact()->getFax() : "",
-            ),
-            'Technical' => array(
+            ));
+
+
+        if ($info->getTechnicalContact()) {
+            $technical = explode(" ", $info->getTechnicalContact()->getName());
+
+
+            $details['Technical'] = array(
                 'First Name' => $technical[0],
                 'Last Name' => isset($technical[1]) ? $technical[1] : "",
                 'Company Name' => $info->getTechnicalContact()->getOrganisation(),
@@ -477,8 +492,15 @@ function netistrar_GetContactDetails($params) {
                 'Country' => $info->getTechnicalContact()->getCountry(),
                 'Phone Number' => $info->getTechnicalContact()->getTelephone() ? $info->getTechnicalContact()->getTelephoneDiallingCode() . "." . $info->getTechnicalContact()->getTelephone() : "",
                 'Fax Number' => $info->getTechnicalContact()->getFax() ? $info->getTechnicalContact()->getFaxDiallingCode() . "." . $info->getTechnicalContact()->getFax() : "",
-            ),
-            'Billing' => array(
+            );
+
+        }
+
+
+        if ($info->getBillingContact()) {
+            $billing = explode(" ", $info->getBillingContact()->getName());
+
+            $details['Billing'] = array(
                 'First Name' => $billing[0],
                 'Last Name' => isset($billing[1]) ? $billing[1] : "",
                 'Company Name' => $info->getBillingContact()->getOrganisation(),
@@ -491,8 +513,14 @@ function netistrar_GetContactDetails($params) {
                 'Country' => $info->getBillingContact()->getCountry(),
                 'Phone Number' => $info->getBillingContact()->getTelephone() ? $info->getBillingContact()->getTelephoneDiallingCode() . "." . $info->getBillingContact()->getTelephone() : "",
                 'Fax Number' => $info->getBillingContact()->getFax() ? $info->getBillingContact()->getFaxDiallingCode() . "." . $info->getBillingContact()->getFax() : "",
-            ),
-            'Admin' => array(
+            );
+
+        }
+
+        if ($info->getAdminContact()) {
+            $admin = explode(" ", $info->getAdminContact()->getName());
+
+            $details['Admin'] = array(
                 'First Name' => $admin[0],
                 'Last Name' => isset($admin[1]) ? $admin[1] : "",
                 'Company Name' => $info->getAdminContact()->getOrganisation(),
@@ -505,8 +533,11 @@ function netistrar_GetContactDetails($params) {
                 'Country' => $info->getAdminContact()->getCountry(),
                 'Phone Number' => $info->getAdminContact()->getTelephone() ? $info->getAdminContact()->getTelephoneDiallingCode() . "." . $info->getAdminContact()->getTelephone() : "",
                 'Fax Number' => $info->getAdminContact()->getFax() ? $info->getAdminContact()->getFaxDiallingCode() . "." . $info->getAdminContact()->getFax() : "",
-            ),
-        );
+            );
+        }
+
+        return $details;
+
 
     } catch (\Exception $e) {
         return array(
@@ -571,72 +602,83 @@ function netistrar_SaveContactDetails($params) {
         }
 
 
-        $adminContact->setName($contactDetails['Admin']['First Name'] . " " . $contactDetails['Admin']['Last Name']);
-        $adminContact->setOrganisation($contactDetails['Admin']['Company Name']);
-        $adminContact->setEmailAddress($contactDetails['Admin']['Email Address']);
-        $adminContact->setStreet1($contactDetails['Admin']['Address 1']);
-        $adminContact->setStreet2($contactDetails['Admin']['Address 2']);
-        $adminContact->setCity($contactDetails['Admin']['City']);
-        $adminContact->setCounty($contactDetails['Admin']['State']);
-        $adminContact->setPostcode($contactDetails['Admin']['Postcode']);
-        $adminContact->setCountry($contactDetails['Admin']['Country']);
+        if ($adminContact) {
 
-        if ($contactDetails['Admin']['Phone Number']) {
-            $splitPhoneNumber = explode(".", $contactDetails['Admin']['Phone Number']);
-            $adminContact->setTelephoneDiallingCode($splitPhoneNumber[0]);
-            $adminContact->setTelephone($splitPhoneNumber[1]);
-        }
+            $adminContact->setName($contactDetails['Admin']['First Name'] . " " . $contactDetails['Admin']['Last Name']);
+            $adminContact->setOrganisation($contactDetails['Admin']['Company Name']);
+            $adminContact->setEmailAddress($contactDetails['Admin']['Email Address']);
+            $adminContact->setStreet1($contactDetails['Admin']['Address 1']);
+            $adminContact->setStreet2($contactDetails['Admin']['Address 2']);
+            $adminContact->setCity($contactDetails['Admin']['City']);
+            $adminContact->setCounty($contactDetails['Admin']['State']);
+            $adminContact->setPostcode($contactDetails['Admin']['Postcode']);
+            $adminContact->setCountry($contactDetails['Admin']['Country']);
 
-        if ($contactDetails['Admin']['Fax Number']) {
-            $splitFaxNumber = explode(".", $contactDetails['Admin']['Fax Number']);
-            $adminContact->setFaxDiallingCode($splitFaxNumber[0]);
-            $adminContact->setFax($splitFaxNumber[1]);
-        }
+            if ($contactDetails['Admin']['Phone Number']) {
+                $splitPhoneNumber = explode(".", $contactDetails['Admin']['Phone Number']);
+                $adminContact->setTelephoneDiallingCode($splitPhoneNumber[0]);
+                $adminContact->setTelephone($splitPhoneNumber[1]);
+            }
 
+            if ($contactDetails['Admin']['Fax Number']) {
+                $splitFaxNumber = explode(".", $contactDetails['Admin']['Fax Number']);
+                $adminContact->setFaxDiallingCode($splitFaxNumber[0]);
+                $adminContact->setFax($splitFaxNumber[1]);
+            }
 
-        $technicalContact->setName($contactDetails['Technical']['First Name'] . " " . $contactDetails['Technical']['Last Name']);
-        $technicalContact->setOrganisation($contactDetails['Technical']['Company Name']);
-        $technicalContact->setEmailAddress($contactDetails['Technical']['Email Address']);
-        $technicalContact->setStreet1($contactDetails['Technical']['Address 1']);
-        $technicalContact->setStreet2($contactDetails['Technical']['Address 2']);
-        $technicalContact->setCity($contactDetails['Technical']['City']);
-        $technicalContact->setCounty($contactDetails['Technical']['State']);
-        $technicalContact->setPostcode($contactDetails['Technical']['Postcode']);
-        $technicalContact->setCountry($contactDetails['Technical']['Country']);
-
-        if ($contactDetails['Technical']['Phone Number']) {
-            $splitPhoneNumber = explode(".", $contactDetails['Technical']['Phone Number']);
-            $technicalContact->setTelephoneDiallingCode($splitPhoneNumber[0]);
-            $technicalContact->setTelephone($splitPhoneNumber[1]);
-        }
-
-        if ($contactDetails['Technical']['Fax Number']) {
-            $splitFaxNumber = explode(".", $contactDetails['Technical']['Fax Number']);
-            $technicalContact->setFaxDiallingCode($splitFaxNumber[0]);
-            $technicalContact->setFax($splitFaxNumber[1]);
         }
 
 
-        $billingContact->setName($contactDetails['Billing']['First Name'] . " " . $contactDetails['Billing']['Last Name']);
-        $billingContact->setOrganisation($contactDetails['Billing']['Company Name']);
-        $billingContact->setEmailAddress($contactDetails['Billing']['Email Address']);
-        $billingContact->setStreet1($contactDetails['Billing']['Address 1']);
-        $billingContact->setStreet2($contactDetails['Billing']['Address 2']);
-        $billingContact->setCity($contactDetails['Billing']['City']);
-        $billingContact->setCounty($contactDetails['Billing']['State']);
-        $billingContact->setPostcode($contactDetails['Billing']['Postcode']);
-        $billingContact->setCountry($contactDetails['Billing']['Country']);
+        if ($technicalContact) {
+            $technicalContact->setName($contactDetails['Technical']['First Name'] . " " . $contactDetails['Technical']['Last Name']);
+            $technicalContact->setOrganisation($contactDetails['Technical']['Company Name']);
+            $technicalContact->setEmailAddress($contactDetails['Technical']['Email Address']);
+            $technicalContact->setStreet1($contactDetails['Technical']['Address 1']);
+            $technicalContact->setStreet2($contactDetails['Technical']['Address 2']);
+            $technicalContact->setCity($contactDetails['Technical']['City']);
+            $technicalContact->setCounty($contactDetails['Technical']['State']);
+            $technicalContact->setPostcode($contactDetails['Technical']['Postcode']);
+            $technicalContact->setCountry($contactDetails['Technical']['Country']);
 
-        if ($contactDetails['Billing']['Phone Number']) {
-            $splitPhoneNumber = explode(".", $contactDetails['Billing']['Phone Number']);
-            $billingContact->setTelephoneDiallingCode($splitPhoneNumber[0]);
-            $billingContact->setTelephone($splitPhoneNumber[1]);
+            if ($contactDetails['Technical']['Phone Number']) {
+                $splitPhoneNumber = explode(".", $contactDetails['Technical']['Phone Number']);
+                $technicalContact->setTelephoneDiallingCode($splitPhoneNumber[0]);
+                $technicalContact->setTelephone($splitPhoneNumber[1]);
+            }
+
+            if ($contactDetails['Technical']['Fax Number']) {
+                $splitFaxNumber = explode(".", $contactDetails['Technical']['Fax Number']);
+                $technicalContact->setFaxDiallingCode($splitFaxNumber[0]);
+                $technicalContact->setFax($splitFaxNumber[1]);
+            }
+
         }
 
-        if ($contactDetails['Billing']['Fax Number']) {
-            $splitFaxNumber = explode(".", $contactDetails['Billing']['Fax Number']);
-            $billingContact->setFaxDiallingCode($splitFaxNumber[0]);
-            $billingContact->setFax($splitFaxNumber[1]);
+
+        if ($billingContact) {
+
+            $billingContact->setName($contactDetails['Billing']['First Name'] . " " . $contactDetails['Billing']['Last Name']);
+            $billingContact->setOrganisation($contactDetails['Billing']['Company Name']);
+            $billingContact->setEmailAddress($contactDetails['Billing']['Email Address']);
+            $billingContact->setStreet1($contactDetails['Billing']['Address 1']);
+            $billingContact->setStreet2($contactDetails['Billing']['Address 2']);
+            $billingContact->setCity($contactDetails['Billing']['City']);
+            $billingContact->setCounty($contactDetails['Billing']['State']);
+            $billingContact->setPostcode($contactDetails['Billing']['Postcode']);
+            $billingContact->setCountry($contactDetails['Billing']['Country']);
+
+            if ($contactDetails['Billing']['Phone Number']) {
+                $splitPhoneNumber = explode(".", $contactDetails['Billing']['Phone Number']);
+                $billingContact->setTelephoneDiallingCode($splitPhoneNumber[0]);
+                $billingContact->setTelephone($splitPhoneNumber[1]);
+            }
+
+            if ($contactDetails['Billing']['Fax Number']) {
+                $splitFaxNumber = explode(".", $contactDetails['Billing']['Fax Number']);
+                $billingContact->setFaxDiallingCode($splitFaxNumber[0]);
+                $billingContact->setFax($splitFaxNumber[1]);
+            }
+
         }
 
 
@@ -1292,3 +1334,111 @@ function netistrar_ConvertAPIAvailabilityResultToSearchResult($result) {
     $searchResult->setStatus($status);
     return $searchResult;
 }
+
+
+/**
+ * Convert additional fields from WHMCS format to Netistrar API format
+ *
+ * @param $additionalFields
+ */
+function netistrar_ConvertAdditionalFieldsFromWHMCS($tld, $additionalFields) {
+
+    $additionalData = array();
+
+    // UK use case
+    if (strpos(strtolower($tld), "uk") !== null) {
+
+        /**
+         * Determine the legal type for UK Regs
+         */
+        if (isset($additionalFields["Legal Type"])) {
+
+            $fieldLookup = array('UK Limited Company' => "LTD",
+                'UK Public Limited Company' => "PLC",
+                'UK Partnership' => "PTNR",
+                'UK Limited Liability Partnership' => "LLP",
+                'Sole Trader' => "STRA",
+                'UK Industrial/Provident Registered Company' => "IP",
+                'Individual' => "IND",
+                'UK School' => "SCH",
+                'UK Registered Charity' => "RCHAR",
+                'UK Government Body' => "GOV",
+                'UK Corporation by Royal Charter' => "CRC",
+                'UK Statutory Body' => "STAT",
+                'UK Entity (other)' => "OTHER",
+                'Non-UK Individual' => "FIND",
+                'Foreign Organization' => "FCORP",
+                'Other foreign organizations' => "FOTHER");
+
+            $additionalData["nominetRegistrantType"] = isset($fieldLookup[$additionalFields["Legal Type"]]) ? $fieldLookup[$additionalFields["Legal Type"]] : null;
+
+        }
+
+        if (isset($additionalFields["Company ID Number"])) {
+            $additionalData["nominetCompanyNumber"] = $additionalFields["Company ID Number"];
+        }
+
+        if (isset($additionalFields["Registrant Name"])) {
+            $additionalFields["nominetTradingName"] = $additionalFields["Registrant Name"];
+        }
+
+    }
+
+    return $additionalData;
+
+}
+
+/**
+ * Convert additional fields from Netistrar API format to WHMCS format.
+ *
+ * @param $additionalFields
+ */
+function netistrar_ConvertAdditionalFieldsToWHMCS($tld, $additionalData) {
+
+    $additionalFields = array();
+
+
+    // UK use case
+    if (strpos(strtolower($tld), "uk") !== null) {
+
+        /**
+         * Determine the legal type for UK Regs
+         */
+        if (isset($additionalData["nominetRegistrantType"])) {
+
+            $fieldLookup = array('UK Limited Company' => "LTD",
+                'UK Public Limited Company' => "PLC",
+                'UK Partnership' => "PTNR",
+                'UK Limited Liability Partnership' => "LLP",
+                'Sole Trader' => "STRA",
+                'UK Industrial/Provident Registered Company' => "IP",
+                'Individual' => "IND",
+                'UK School' => "SCH",
+                'UK Registered Charity' => "RCHAR",
+                'UK Government Body' => "GOV",
+                'UK Corporation by Royal Charter' => "CRC",
+                'UK Statutory Body' => "STAT",
+                'UK Entity (other)' => "OTHER",
+                'Non-UK Individual' => "FIND",
+                'Foreign Organization' => "FCORP",
+                'Other foreign organizations' => "FOTHER");
+
+            $additionalFields["Legal Type"] = isset($fieldLookup[$additionalData["nominetRegistrantType"]]) ? $fieldLookup[$additionalData["nominetRegistrantType"]] : null;
+
+        }
+
+        if (isset($additionalData["nominetCompanyNumber"])) {
+            $additionalFields["Company ID Number"] = $additionalData["nominetCompanyNumber"];
+        }
+
+        if (isset($additionalData["nominetTradingName"])) {
+            $additionalFields["Registrant Name"] = $additionalData["nominetTradingName"];
+        }
+
+    }
+
+
+    return $additionalFields;
+
+}
+
