@@ -93,9 +93,9 @@ function netistrar_getConfigArray() {
  *
  * @param array $params common module parameters
  *
+ * @return array
  * @see https://developers.whmcs.com/domain-registrars/module-parameters/
  *
- * @return array
  */
 function netistrar_RegisterDomain($params) {
 
@@ -178,9 +178,9 @@ function netistrar_RegisterDomain($params) {
  *
  * @param array $params common module parameters
  *
+ * @return array
  * @see https://developers.whmcs.com/domain-registrars/module-parameters/
  *
- * @return array
  */
 function netistrar_TransferDomain($params) {
 
@@ -200,10 +200,17 @@ function netistrar_TransferDomain($params) {
 
     $phone = explode(".", $params["fullphonenumber"]);
 
+    $additionalData = array();
+    if (isset($params["additionalfields"])) {
+        $additionalData = netistrar_ConvertAdditionalFieldsFromWHMCS($params["tld"], $params["additionalfields"]);
+    }
+
     $ownerContact = new DomainNameContact($params["fullname"], $params["email"], $params["companyname"], $params["address1"], $params["address2"], $params["city"],
         $params["state"], $params["postcode"], $params["countrycode"], $phone[0] ? $phone[0] : null,
         isset($phone[1]) ? $phone[1] : null);
 
+    // Set additional data if required.
+    $ownerContact->setAdditionalData($additionalData);
 
     $adminPhone = explode(".", $params["adminfullphonenumber"]);
 
@@ -211,6 +218,9 @@ function netistrar_TransferDomain($params) {
         $params["adminaddress2"], $params["admincity"], $params["adminstate"], $params["adminpostcode"], $params["admincountrycode"],
         $adminPhone[0] ? $adminPhone[0] : null,
         isset($adminPhone[1]) ? $adminPhone[1] : null);
+
+    // Set additional data if required.
+    $adminContact->setAdditionalData($additionalData);
 
 
     $privacyProxy = (bool)$params['idprotection'] ? 1 : 2;
@@ -260,9 +270,9 @@ function netistrar_TransferDomain($params) {
  *
  * @param array $params common module parameters
  *
+ * @return array
  * @see https://developers.whmcs.com/domain-registrars/module-parameters/
  *
- * @return array
  */
 function netistrar_RenewDomain($params) {
 
@@ -273,6 +283,12 @@ function netistrar_RenewDomain($params) {
         $transaction = $api->domains()->renew($params['sld'] . "." . $params['tld'], $params["regperiod"]);
 
         logModuleCall("netistrar", "Renew Domain", $params['sld'] . "." . $params['tld'] . " -> " . $params["regperiod"] . " yrs", $transaction);
+
+        // if not successful on renewal, throw exception.
+        if ($transaction->getTransactionStatus() != "SUCCEEDED") {
+            $elementErrors = array_values($transaction->getTransactionElements()[$params['sld'] . "." . $params['tld']]->getElementErrors());
+            throw new Exception($elementErrors[0]->getMessage());
+        }
 
         return array(
             'success' => true,
@@ -307,8 +323,11 @@ function netistrar_GetDomainInformation($params) {
 
         logModuleCall("netistrar", "Get Domain Info", $params['sld'] . "." . $params['tld'], $info);
 
-        $expiryDate = date_create_from_format("d/m/Y H:i:s", $info->getExpiryDate());
-        $expiryDate = WHMCS\Carbon::createFromDate($expiryDate->format("Y"), $expiryDate->format("m"), $expiryDate->format("d"));
+        $expiryDate = null;
+        if ($info->getExpiryDate()) {
+            $expiryDate = date_create_from_format("d/m/Y H:i:s", $info->getExpiryDate());
+            $expiryDate = WHMCS\Carbon::createFromDate($expiryDate->format("Y"), $expiryDate->format("m"), $expiryDate->format("d"));
+        }
 
         $lockedUntil = null;
         if ($info->getLockedUntil()) {
@@ -327,8 +346,9 @@ function netistrar_GetDomainInformation($params) {
         // Handle non ITRP domains.
         $nonIRTPDomains = array("uk", "eu");
         $exploded = explode(".", $params["tld"]);
-        $tld = array_pop($exploded);
+        $tld = strtolower(array_pop($exploded));
         $itrp = !in_array($tld, $nonIRTPDomains);
+
 
         return (new Domain)
             ->setDomain($info->getDomainName())
@@ -338,8 +358,8 @@ function netistrar_GetDomainInformation($params) {
             ->setTransferLockExpiryDate($lockedUntil)
             ->setExpiryDate($expiryDate)
             ->setIdProtectionStatus($info->getPrivacyProxy() == 1)
-            ->setIsIrtpEnabled($info->getLocked() ? true : false)
-            ->setIrtpTransferLock($info->getLocked() ? true : false)
+            ->setIsIrtpEnabled($itrp ? true : false)
+            ->setIrtpTransferLock($itrp && $info->getLockedUntil() ? true : false)
             ->setDomainContactChangePending($info->getOwnerContact()->getPendingContact() ? true : false)
             ->setDomainContactChangeExpiryDate($pendingUntil)
             ->setRegistrantEmailAddress($info->getOwnerContact()->getEmailAddress())
@@ -390,9 +410,9 @@ function netistrar_GetDomainInformation($params) {
  *
  * @param array $params common module parameters
  *
+ * @return array
  * @see https://developers.whmcs.com/domain-registrars/module-parameters/
  *
- * @return array
  */
 function netistrar_SaveNameservers($params) {
 
@@ -442,9 +462,9 @@ function netistrar_SaveNameservers($params) {
  *
  * @param array $params common module parameters
  *
+ * @return array
  * @see https://developers.whmcs.com/domain-registrars/module-parameters/
  *
- * @return array
  */
 function netistrar_GetContactDetails($params) {
 
@@ -555,9 +575,9 @@ function netistrar_GetContactDetails($params) {
  *
  * @param array $params common module parameters
  *
+ * @return array
  * @see https://developers.whmcs.com/domain-registrars/module-parameters/
  *
- * @return array
  */
 function netistrar_SaveContactDetails($params) {
 
@@ -715,14 +735,14 @@ function netistrar_SaveContactDetails($params) {
  * registration or transfer.
  *
  * @param array $params common module parameters
+ * @return \WHMCS\Domains\DomainLookup\ResultsList An ArrayObject based collection of \WHMCS\Domains\DomainLookup\SearchResult results
+ * @throws Exception Upon domain availability check failure.
+ *
+ * @see \WHMCS\Domains\DomainLookup\ResultsList
+ *
  * @see https://developers.whmcs.com/domain-registrars/module-parameters/
  *
  * @see \WHMCS\Domains\DomainLookup\SearchResult
- * @see \WHMCS\Domains\DomainLookup\ResultsList
- *
- * @throws Exception Upon domain availability check failure.
- *
- * @return \WHMCS\Domains\DomainLookup\ResultsList An ArrayObject based collection of \WHMCS\Domains\DomainLookup\SearchResult results
  */
 function netistrar_CheckAvailability($params) {
 
@@ -779,14 +799,14 @@ function netistrar_DomainSuggestionOptions() {
  * Provide domain suggestions based on the domain lookup term provided.
  *
  * @param array $params common module parameters
+ * @return \WHMCS\Domains\DomainLookup\ResultsList An ArrayObject based collection of \WHMCS\Domains\DomainLookup\SearchResult results
+ * @throws Exception Upon domain suggestions check failure.
+ *
+ * @see \WHMCS\Domains\DomainLookup\ResultsList
+ *
  * @see https://developers.whmcs.com/domain-registrars/module-parameters/
  *
  * @see \WHMCS\Domains\DomainLookup\SearchResult
- * @see \WHMCS\Domains\DomainLookup\ResultsList
- *
- * @throws Exception Upon domain suggestions check failure.
- *
- * @return \WHMCS\Domains\DomainLookup\ResultsList An ArrayObject based collection of \WHMCS\Domains\DomainLookup\SearchResult results
  */
 function netistrar_GetDomainSuggestions($params) {
 
@@ -814,9 +834,6 @@ function netistrar_GetDomainSuggestions($params) {
 
     } catch (\Exception $e) {
 
-
-        file_put_contents("/var/www/ping", var_export($e, true));
-
         return array(
             'error' => $e->getMessage(),
         );
@@ -826,13 +843,27 @@ function netistrar_GetDomainSuggestions($params) {
 
 
 /**
+ * Get the nameservers for this domain
+ *
+ * @param $params
+ */
+function netistrar_GetNameservers($params) {
+
+    $info = netistrar_GetDomainInformation($params);
+
+    // Return the nameservers
+    return $info->getNameservers();
+
+}
+
+/**
  * Set registrar lock status.
  *
  * @param array $params common module parameters
  *
+ * @return array
  * @see https://developers.whmcs.com/domain-registrars/module-parameters/
  *
- * @return array
  */
 function netistrar_SaveRegistrarLock($params) {
 
@@ -877,9 +908,9 @@ function netistrar_SaveRegistrarLock($params) {
  *
  * @param array $params common module parameters
  *
+ * @return array
  * @see https://developers.whmcs.com/domain-registrars/module-parameters/
  *
- * @return array
  */
 function netistrar_IDProtectToggle($params) {
 
@@ -926,9 +957,9 @@ function netistrar_IDProtectToggle($params) {
  *
  * @param array $params common module parameters
  *
- * @see https://developers.whmcs.com/domain-registrars/module-parameters/
- *
  * @return array
+ *
+ * @see https://developers.whmcs.com/domain-registrars/module-parameters/
  *
  */
 function netistrar_GetEPPCode($params) {
@@ -1015,9 +1046,9 @@ function netistrar_GetEPPCode($params) {
  *
  * @param array $params common module parameters
  *
+ * @return array
  * @see https://developers.whmcs.com/domain-registrars/module-parameters/
  *
- * @return array
  */
 function netistrar_ReleaseDomain($params) {
     // user defined configuration values
@@ -1067,9 +1098,9 @@ function netistrar_ReleaseDomain($params) {
  *
  * @param array $params common module parameters
  *
+ * @return array
  * @see https://developers.whmcs.com/domain-registrars/module-parameters/
  *
- * @return array
  */
 function netistrar_RegisterNameserver($params) {
 
@@ -1120,9 +1151,9 @@ function netistrar_RegisterNameserver($params) {
  *
  * @param array $params common module parameters
  *
+ * @return array
  * @see https://developers.whmcs.com/domain-registrars/module-parameters/
  *
- * @return array
  */
 function netistrar_ModifyNameserver($params) {
 
@@ -1136,9 +1167,9 @@ function netistrar_ModifyNameserver($params) {
  *
  * @param array $params common module parameters
  *
+ * @return array
  * @see https://developers.whmcs.com/domain-registrars/module-parameters/
  *
- * @return array
  */
 function netistrar_DeleteNameserver($params) {
 
@@ -1186,9 +1217,9 @@ function netistrar_DeleteNameserver($params) {
  *
  * @param array $params common module parameters
  *
+ * @return array
  * @see https://developers.whmcs.com/domain-registrars/module-parameters/
  *
- * @return array
  */
 function netistrar_Sync($params) {
 
@@ -1236,9 +1267,9 @@ function netistrar_Sync($params) {
  *
  * @param array $params common module parameters
  *
+ * @return array
  * @see https://developers.whmcs.com/domain-registrars/module-parameters/
  *
- * @return array
  */
 function netistrar_TransferSync($params) {
 
@@ -1406,22 +1437,22 @@ function netistrar_ConvertAdditionalFieldsToWHMCS($tld, $additionalData) {
          */
         if (isset($additionalData["nominetRegistrantType"])) {
 
-            $fieldLookup = array('UK Limited Company' => "LTD",
-                'UK Public Limited Company' => "PLC",
-                'UK Partnership' => "PTNR",
-                'UK Limited Liability Partnership' => "LLP",
-                'Sole Trader' => "STRA",
-                'UK Industrial/Provident Registered Company' => "IP",
-                'Individual' => "IND",
-                'UK School' => "SCH",
-                'UK Registered Charity' => "RCHAR",
-                'UK Government Body' => "GOV",
-                'UK Corporation by Royal Charter' => "CRC",
-                'UK Statutory Body' => "STAT",
-                'UK Entity (other)' => "OTHER",
-                'Non-UK Individual' => "FIND",
-                'Foreign Organization' => "FCORP",
-                'Other foreign organizations' => "FOTHER");
+            $fieldLookup = array("LTD" => 'UK Limited Company',
+                "PLC" => 'UK Public Limited Company',
+                "PTNR" => 'UK Partnership',
+                "LLP" => 'UK Limited Liability Partnership',
+                "STRA" => 'Sole Trader',
+                "IP" => 'UK Industrial/Provident Registered Company',
+                "IND" => 'Individual',
+                "SCH" => 'UK School',
+                "RCHAR" => 'UK Registered Charity',
+                "GOV" => 'UK Government Body',
+                "CRC" => 'UK Corporation by Royal Charter',
+                "STAT" => 'UK Statutory Body',
+                "OTHER" => 'UK Entity (other)',
+                "FIND" => 'Non-UK Individual',
+                "FCORP" => 'Foreign Organization',
+                "FOTHER" => 'Other foreign organizations');
 
             $additionalFields["Legal Type"] = isset($fieldLookup[$additionalData["nominetRegistrantType"]]) ? $fieldLookup[$additionalData["nominetRegistrantType"]] : null;
 
