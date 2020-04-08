@@ -1254,7 +1254,7 @@ function netistrar_Sync($params) {
     if ($domainInfo instanceof Domain) {
         $status = $domainInfo->getRegistrationStatus();
 
-        $returnArray["expirydate"] = $domainInfo->getExpiryDate()->format('Y-m-d);
+        $returnArray["expirydate"] = $domainInfo->getExpiryDate()->format('Y-m-d');
 
         if ($status != "ACTIVE") {
             $returnArray["active"] = false;
