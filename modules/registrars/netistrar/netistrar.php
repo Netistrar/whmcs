@@ -58,7 +58,7 @@ function netistrar_getConfigArray() {
         "environment" => array(
             "FriendlyName" => "Environment",
             "Type" => "radio", # Radio Selection of Options
-            "Options" => "OTE,Production",
+            "Options" => "Development,OTE,Production",
             "Description" => "Which environment to connect to",
             "Default" => "OTE",
         ),
@@ -751,11 +751,11 @@ function netistrar_CheckAvailability($params) {
 
     $tldsToInclude = netistrar_PrepareTLDsForAPICall($params['tldsToInclude']);
 
-
     try {
 
         $apiProvider = netistrar_GetAPIInstance($params);
-        $availability = $apiProvider->domains()->hintedAvailability(new DomainNameAvailabilityDescriptor($searchTerm, null, $tldsToInclude));
+        $availabilityDescriptor = new DomainNameAvailabilityDescriptor($searchTerm, null, $tldsToInclude);
+        $availability = $apiProvider->domains()->hintedAvailability($availabilityDescriptor);
 
 
         $results = new ResultsList();
@@ -768,9 +768,13 @@ function netistrar_CheckAvailability($params) {
             $results->append($searchResult);
         }
 
+        logModuleCall("netistrar", "Check Availability", $availabilityDescriptor, $results);
+
         return $results;
 
     } catch (\Exception $e) {
+
+        logModuleCall("netistrar", "Check Availability", $availabilityDescriptor, $e);
 
         return array(
             'error' => $e->getMessage(),
@@ -1317,7 +1321,7 @@ function netistrar_GetAPIInstance($params) {
     $url = "";
     switch ($environment) {
         case "Development":
-            $url = "http://restapi.netistrar.test";
+            $url = "http://restapi.netistrar.test:8080";
             break;
         case "OTE":
             $url = "https://restapi.netistrar-ote.uk";
