@@ -348,11 +348,20 @@ function netistrar_GetDomainInformation($params) {
         $exploded = explode(".", $params["tld"]);
         $tld = strtolower(array_pop($exploded));
         $itrp = !in_array($tld, $nonIRTPDomains);
-
-
+        
+        // Extract the nameservers and key them so WHMCS can understand
+        $nameservers = [];
+        $nameserverIndex = 1;
+        
+        foreach($info->getNameservers() as $nameserver)
+        {
+            $nameservers["ns{$nameserverIndex}"] = $nameserver;
+            $nameserverIndex++;
+        }
+        
         return (new Domain)
             ->setDomain($info->getDomainName())
-            ->setNameservers($info->getNameservers())
+            ->setNameservers($nameservers)
             ->setRegistrationStatus($info->getStatus())
             ->setTransferLock($info->getLocked())
             ->setTransferLockExpiryDate($lockedUntil)
@@ -855,8 +864,18 @@ function netistrar_GetNameservers($params) {
 
     $info = netistrar_GetDomainInformation($params);
 
+    // Extract the nameservers and key them so WHMCS can understand
+    $nameservers = [];
+    $nameserverIndex = 1;
+
+    foreach($info->getNameservers() as $nameserver)
+    {
+        $nameservers["ns{$nameserverIndex}"] = $nameserver;
+        $nameserverIndex++;
+    }
+    
     // Return the nameservers
-    return $info->getNameservers();
+    return $nameservers;
 
 }
 
@@ -1239,7 +1258,7 @@ function netistrar_Sync($params) {
     if ($domainInfo instanceof Domain) {
         $status = $domainInfo->getRegistrationStatus();
 
-        $returnArray["expirydate"] = $domainInfo->getExpiryDate();
+        $returnArray["expirydate"] = $domainInfo->getExpiryDate()->format('Y-m-d');
 
         if ($status != "ACTIVE") {
             $returnArray["active"] = false;
