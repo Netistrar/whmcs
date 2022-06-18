@@ -82,7 +82,7 @@ function netistrar_getConfigArray() {
 
 		'useCurl' => [
 			'FriendlyName' => 'Use cURL',
-			'type' => 'yesno',
+			'Type' => 'yesno',
 			'Description' => 'Use cURL for remote requests'
 		]
     );
