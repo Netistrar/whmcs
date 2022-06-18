@@ -1,6 +1,6 @@
 <?php
 
-namespace Kinikit\Interfaces\Core\Util\HTTP;
+namespace Kinikit\Core\Interfaces\Util\HTTP;
 
 use Kinikit\Core\Exception\HttpRequestErrorException;
 

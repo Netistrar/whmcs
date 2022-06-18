@@ -3,7 +3,7 @@
 namespace Kinikit\Core\Util\HTTP;
 
 use Kinikit\Core\Exception\HttpRequestErrorException;
-use Kinikit\Interfaces\Core\Util\HTTP\SimpleHttpRemoteRequestInterface;
+use Kinikit\Core\Interfaces\Util\HTTP\SimpleHttpRemoteRequestInterface;
 
 /**
  * Simple CURL-LESS Post request object for dispatching post requests.

@@ -2,7 +2,7 @@
 
 namespace Netistrar\ClientAPI;
 
-use Kinikit\Interfaces\Core\Util\HTTP\SimpleHttpRemoteRequestInterface;
+use Kinikit\Core\Interfaces\Util\HTTP\SimpleHttpRemoteRequestInterface;
 use Netistrar\ClientAPI\Controllers\domains;
 use Netistrar\ClientAPI\Controllers\utility;
 use Netistrar\ClientAPI\Controllers\account;

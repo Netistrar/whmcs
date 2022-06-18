@@ -18,7 +18,7 @@ use Kinikit\Core\Util\Serialisation\JSON\JSONToObjectConverter;
 use Kinikit\Core\Util\Serialisation\JSON\ObjectToJSONConverter;
 use Kinikit\Core\Util\Serialisation\XML\ObjectToXMLConverter;
 use Kinikit\Core\Util\Serialisation\XML\XMLToObjectConverter;
-use Kinikit\Interfaces\Core\Util\HTTP\SimpleHttpRemoteRequestInterface;
+use Kinikit\Core\Interfaces\Util\HTTP\SimpleHttpRemoteRequestInterface;
 
 class WebServiceProxy {
 
