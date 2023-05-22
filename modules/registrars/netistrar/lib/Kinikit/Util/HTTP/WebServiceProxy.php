@@ -105,10 +105,10 @@ class WebServiceProxy {
         } catch (HttpRequestErrorException $e) {
 
             $response = $e->getResponse();
-            
+
+
             if ($this->dataFormat == self::DATA_FORMAT_JSON) {
                 $response = $formatToObjectConverter->convert($response);
-
 
                 if ($response["exceptionClass"] && isset($expectedExceptions[$response["exceptionClass"]])) {
                     $response = SerialisableArrayUtils::convertArrayToSerialisableObjects($response, $expectedExceptions[$response["exceptionClass"]]);
