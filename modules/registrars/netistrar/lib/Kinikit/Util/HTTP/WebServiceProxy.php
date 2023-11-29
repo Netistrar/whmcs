@@ -131,7 +131,8 @@ class WebServiceProxy {
         } catch (HttpRequestErrorException $e) {
 
             $response = $e->getResponse();
-            
+
+
             if ($this->dataFormat == self::DATA_FORMAT_JSON) {
                 $response = $formatToObjectConverter->convert($response);
 
