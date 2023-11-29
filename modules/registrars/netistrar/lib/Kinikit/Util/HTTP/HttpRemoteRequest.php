@@ -3,35 +3,26 @@
 namespace Kinikit\Core\Util\HTTP;
 
 use Kinikit\Core\Exception\HttpRequestErrorException;
+use Kinikit\Core\Interfaces\Util\HTTP\SimpleHttpRemoteRequestInterface;
 
 /**
- * Simple CURL-LESS Post request object for dispatching post requests,
- *
- * Class PostRequest
+ * Simple CURL-LESS Post request object for dispatching post requests.
  */
-class HttpRemoteRequest {
-
+class HttpRemoteRequest implements SimpleHttpRemoteRequestInterface
+{
     private $url;
     private $parameters;
     private $payload;
     private $method;
-    private $headers = array();
+    private $headers;
     private $authUsername;
     private $authPassword;
 
-
-    /**
-     * Construct a remote request to another server
-     *
-     * @param string $url
-     * @param string $method
-     * @param string[string] $parameters
-     * @param string $payload
-     * @param string[string] $headers
-     * @param string $authUsername
-     * @param string $authPassword
-     */
-    public function __construct($url, $method = "POST", $parameters = array(), $payload = null, $headers = array(), $authUsername = null, $authPassword = null) {
+	/**
+	 * @inheritDoc
+	 */
+	public function __construct(string $url, string $method = "POST", array $parameters = [], string $payload = null, array $headers = [], string $authUsername = null, string $authPassword = null)
+	{
         $this->url = $url;
         $this->parameters = $parameters;
         $this->payload = $payload;
@@ -41,16 +32,13 @@ class HttpRemoteRequest {
         $this->authPassword = $authPassword;
     }
 
-
-    /**
-     * Dispatch the request and collect the result.
-     *
-     * @return string
-     */
-    public function dispatch($ignoreErrors = true, $timeout = null) {
-
+	/**
+	 * @inheritDoc
+	 */
+	public function dispatch(bool $ignoreErrors = true, int $timeout = null): string
+	{
         if (!isset($this->headers)) {
-            $this->headers = array();
+            $this->headers = [];
         }
 
         if (!isset($this->headers["Content-Type"]))
@@ -62,7 +50,7 @@ class HttpRemoteRequest {
             $this->headers["Authorization"] = "Basic " . base64_encode($this->authUsername . ":" . $this->authPassword);
         }
 
-        $headers = array();
+        $headers = [];
         foreach ($this->headers as $key => $header) {
             $headers[] = $key . ": " . $header;
         }
@@ -77,10 +65,16 @@ class HttpRemoteRequest {
         }
 
         $paramsAsGet = $payload || $this->method == "GET";
-        $contentData = $payload ? $payload : ($paramsAsGet ? array() : $queryParams);
+        $contentData = $payload ? $payload : ($paramsAsGet ? [] : $queryParams);
 
-        $options = array('http' => array('header' => $headers, 'method' => $this->method,
-            'content' => $contentData, 'ignore_errors' => $ignoreErrors));
+        $options = [
+			'http' => [
+				'header' => $headers,
+				'method' => $this->method,
+            	'content' => $contentData,
+				'ignore_errors' => $ignoreErrors
+			]
+		];
 
         $url = $this->url;
         if ($paramsAsGet && sizeof($this->parameters) > 0) {
@@ -101,9 +95,7 @@ class HttpRemoteRequest {
             throw new HttpRequestErrorException($url, $responseCode, $results);
         }
 
-
         return $results;
     }
-
-
 }
+

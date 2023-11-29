@@ -8,6 +8,7 @@ if (!defined("WHMCS")) {
     die("This file cannot be accessed directly");
 }
 
+use Kinikit\Core\Util\HTTP\CurlHttpRemoteRequest;
 use Netistrar\ClientAPI\APIProvider;
 use Netistrar\ClientAPI\Exception\TransactionException;
 use Netistrar\ClientAPI\Objects\Domain\Descriptor\DomainNameAvailabilityDescriptor;
@@ -77,7 +78,13 @@ function netistrar_getConfigArray() {
             'Size' => '50',
             'Default' => '',
             'Description' => 'API Secret as found in My Account -> API Settings under REST API',
-        )
+        ),
+
+		'useCurl' => [
+			'FriendlyName' => 'Use cURL',
+			'Type' => 'yesno',
+			'Description' => 'Use cURL for remote requests'
+		]
     );
 }
 
@@ -1350,7 +1357,13 @@ function netistrar_GetAPIInstance($params) {
             break;
     }
 
-    return new APIProvider($url, $apiKey, $apiSecret);
+	$requestHandler = null;
+
+	if (isset($params['useCurl']) && $params['useCurl'] == 'on') {
+		$requestHandler = CurlHttpRemoteRequest::class;
+	}
+
+    return new APIProvider($url, $apiKey, $apiSecret, $requestHandler);
 }
 
 /**

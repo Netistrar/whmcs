@@ -18,36 +18,63 @@ use Kinikit\Core\Util\Serialisation\JSON\JSONToObjectConverter;
 use Kinikit\Core\Util\Serialisation\JSON\ObjectToJSONConverter;
 use Kinikit\Core\Util\Serialisation\XML\ObjectToXMLConverter;
 use Kinikit\Core\Util\Serialisation\XML\XMLToObjectConverter;
+use Kinikit\Core\Interfaces\Util\HTTP\SimpleHttpRemoteRequestInterface;
 
 class WebServiceProxy {
 
+	/**
+	 * @var string
+	 */
     private $webServiceURL;
+
+	/**
+	 * @var array
+	 */
     private $globalParameters;
+
+	/**
+	 * @var string
+	 */
     private $dataFormat = "json";
 
     const DATA_FORMAT_JSON = "json";
     const DATA_FORMAT_XML = "xml";
 
+	/**
+	 * @var string
+	 */
+	private $httpRequestHandler;
 
-    /**
+	/**
      * Construct the proxy object with a webservice endpoint URL and optionally any global parameters
      * which will be appended to every request.
      *
      * WebServiceProxy constructor.
-     * @param string $webServiceURL
-     * @param array $globalParameters
      */
-    public function __construct($webServiceURL, $globalParameters = array(), $dataFormat = self::DATA_FORMAT_JSON) {
-
+    public function __construct(string $webServiceURL, array $globalParameters = [], string $dataFormat = self::DATA_FORMAT_JSON, string $httpRequestHandler = null)
+	{
         if (!$webServiceURL) {
             throw new \Exception("No Web Service URL passed to the Web Service Proxy");
         }
 
+		if (null === $httpRequestHandler) {
+			$httpRequestHandler = $this->determineDefaultHttpRequestHandler();
+		}
+
+		if (!in_array(SimpleHttpRemoteRequestInterface::class, class_implements($httpRequestHandler))) {
+			throw new \InvalidArgumentException("\$httpRequestInterface invalid. Must implement " . SimpleHttpRemoteRequestInterface::class);
+		}
+
         $this->webServiceURL = $webServiceURL;
         $this->globalParameters = $globalParameters;
         $this->dataFormat = $dataFormat;
-    }
+		$this->httpRequestHandler = $httpRequestHandler;
+	}
 
+	private function determineDefaultHttpRequestHandler(): string
+	{
+		return HttpRemoteRequest::class;
+	}
 
     /**
      * Implement the call method to call a proxy service
@@ -63,7 +90,6 @@ class WebServiceProxy {
 
         $objectToFormatConverter = $this->dataFormat == self::DATA_FORMAT_JSON ? new ObjectToJSONConverter() : new ObjectToXMLConverter();
         $formatToObjectConverter = $this->dataFormat == self::DATA_FORMAT_JSON ? new JSONToObjectConverter() : new XMLToObjectConverter();
-
 
         if (!is_array($expectedExceptions)) {
             $expectedExceptions = array();
@@ -86,7 +112,8 @@ class WebServiceProxy {
             $payload = $objectToFormatConverter->convert($payload);
         }
 
-        $request = new HttpRemoteRequest($this->webServiceURL . "/" . $name, $httpMethod, $parameters, $payload);
+		/** @var SimpleHttpRemoteRequestInterface $request */
+		$request = new $this->httpRequestHandler($this->webServiceURL . "/" . $name, $httpMethod, $parameters, $payload);
 
         try {
             $result = $request->dispatch();
@@ -94,7 +121,6 @@ class WebServiceProxy {
             if ($this->dataFormat == self::DATA_FORMAT_JSON) {
                 $result = $formatToObjectConverter->convert($result);
             }
-
 
             if ($returnClass) {
                 $result = SerialisableArrayUtils::convertArrayToSerialisableObjects($result, $returnClass);
@@ -113,7 +139,6 @@ class WebServiceProxy {
                 if ($response["exceptionClass"] && isset($expectedExceptions[$response["exceptionClass"]])) {
                     $response = SerialisableArrayUtils::convertArrayToSerialisableObjects($response, $expectedExceptions[$response["exceptionClass"]]);
                 }
-
             }
 
             if ($response instanceof SerialisableException) {
@@ -121,10 +146,7 @@ class WebServiceProxy {
             } else {
                 throw $e;
             }
-
         }
-
-
     }
-
 }
+

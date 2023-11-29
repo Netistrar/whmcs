@@ -1,5 +1,7 @@
 {
   "require": {
-    "netistrar/reseller-api": "dev-master"
+    "netistrar/reseller-api": "dev-master",
+    "php": "^7.1|^8.1",
+    "ext-curl": "*"
   }
 }
