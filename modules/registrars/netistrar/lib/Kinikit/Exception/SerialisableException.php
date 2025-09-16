@@ -31,7 +31,7 @@ class SerialisableException extends \Exception {
      * @param integer $code
      * @param \Exception $sourceException
      */
-    public function __construct($message = null, $code = null, $sourceException = null) {
+    public function __construct($message = null, ?int $code = null, $sourceException = null) {
         if (!$message && $sourceException) {
             $message = "Non-Serialisable Exception Raised";
         }
